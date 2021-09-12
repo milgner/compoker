@@ -127,7 +127,7 @@ pub enum Vote {
     Infinite,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum VotingState {
     Opening,
     Voting,
@@ -324,6 +324,7 @@ impl Handler<Disconnect> for Server {
                     println!("For some reason the participant wasn't in the expected session?!");
                 }
             }
+            self.reveal_if_everyone_voted(msg.session_id);
         } else {
             if msg.session_id > 0 {
                 println!(
@@ -506,7 +507,7 @@ impl Server {
                 return;
             }
             let participant = session.participants.iter().find(|p| p.id == participant_id);
-            if participant.is_none() {
+            if participant.is_none() || session.current_issue.state == VotingState::Closing {
                 return;
             }
             let participant_name = participant.unwrap().name.clone();
@@ -521,26 +522,38 @@ impl Server {
             if did_vote {
                 return;
             }
+            {
+                session.participant_ids().iter().for_each(|&p| {
+                    self.send_message(
+                        p,
+                        PokerMessage::VoteReceiptAnnouncement {
+                            participant_name: participant_name.to_string(),
+                            issue_id,
+                        },
+                    );
+                });
+            }
+        }
+        self.reveal_if_everyone_voted(session_id);
+    }
+
+    fn reveal_if_everyone_voted(&mut self, session_id: u32) {
+        if let Some(session) = self.sessions.get_mut(&session_id) {
             let participant_ids = session.participant_ids();
             let all_votes_cast = participant_ids.len() == session.current_issue.votes.len();
+            if !all_votes_cast {
+                return
+            }
+            let outcome = Vote::Unknown;
+            (*session).current_issue.outcome = Some(outcome.clone()); // TODO: determine outcome from votes cast
             let issue_id = session.current_issue.id;
             let votes = session.current_issue.votes.clone();
-
             participant_ids.iter().for_each(|&p| {
-                self.send_message(
-                    p,
-                    PokerMessage::VoteReceiptAnnouncement {
-                        participant_name: participant_name.to_string(),
-                        issue_id,
-                    },
-                );
-                if all_votes_cast {
-                    self.send_message(p, PokerMessage::VotingResultsRevelation {
-                        issue_id: issue_id.clone(),
-                        votes: votes.clone(),
-                        outcome: Vote::Unknown, // TODO: determine outcome from votes cast
-                    });
-                }
+                self.send_message(p, PokerMessage::VotingResultsRevelation {
+                    issue_id: issue_id.clone(),
+                    votes: votes.clone(),
+                    outcome: outcome.clone(),
+                });
             });
         }
     }

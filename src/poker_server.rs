@@ -545,7 +545,8 @@ impl Server {
                 return
             }
             let outcome = Vote::Unknown;
-            (*session).current_issue.outcome = Some(outcome.clone()); // TODO: determine outcome from votes cast
+            session.current_issue.outcome = Some(outcome.clone()); // TODO: determine outcome from votes cast
+            session.current_issue.state = VotingState::Closing;
             let issue_id = session.current_issue.id;
             let votes = session.current_issue.votes.clone();
             participant_ids.iter().for_each(|&p| {

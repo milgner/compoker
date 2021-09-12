@@ -247,6 +247,7 @@ const messageHandlers = {
                 console.log("Received information about unknown vote")
                 return current
             }
+            current.state = VotingState.Closing
             current.votes = votes
             current.outcome = outcome
             return currentIssue = current

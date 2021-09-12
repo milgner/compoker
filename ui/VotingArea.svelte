@@ -1,17 +1,16 @@
 <script lang="ts">
-    import {issueStore, sessionStore, Vote} from "./store";
+    import {issueStore, sessionStore, Vote, VotingState} from "./store";
     import VoteCard from "./VoteCard.svelte";
     import {onDestroy} from "svelte";
 
     let my_name;
     let issue;
-    let didVote = false;
+    let votingClosed = false;
 
     const sessionUnsubscribe = sessionStore.subscribe((updated) => { my_name = updated.my_name });
     const issueUnsubscribe = issueStore.subscribe((updated) => {
         issue = updated;
-        const voted = Object.keys(issue.votes);
-        didVote = voted.includes(my_name);
+        votingClosed = updated.state == VotingState.Closing;
     });
 
     onDestroy(() => {
@@ -26,7 +25,7 @@
 <div class="voting-area-container">
     <div class="voting-area">
         {#each availableVotes as vote}
-            <VoteCard vote="{vote}" disabled="{didVote}"/>
+            <VoteCard vote="{vote}" disabled="{votingClosed}"/>
         {/each}
     </div>
 </div>

@@ -24,7 +24,7 @@
         </HeaderNav>
     </Header>
     <Content>
-        {#if session.error === null}
+        {#if session.error === null && session.id > 0}
             <Session />
         {:else}
             <JoinOrCreateSession />

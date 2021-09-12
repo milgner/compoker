@@ -14,22 +14,23 @@
         }
     }
 
-    let oldSession = sessionStore.get();
+    let session;
+    sessionStore.subscribe((updated) => session = updated);
 </script>
 
 <Grid>
     <Row>
         <Column>
             <Tile light>
-                {#if oldSession.error == SessionJoinError.ParticipantNameTaken}
+                {#if session.error == SessionJoinError.ParticipantNameTaken}
                     <h3>The name you requested was already taken</h3>
-                {:else if oldSession.error == SessionJoinError.UnknownSession}
+                {:else if session.error == SessionJoinError.UnknownSession}
                     <h3>You tried to join a non-existing session</h3>
                 {/if}
                 <Form on:submit={handleSubmit}>
                     <FormGroup legendText="Join or create session">
-                        <TextInput id="myName" labelText="Your Name" placeholder="What should we call you?" value="{oldSession.my_name}" required/>
-                        <TextInput id="sessionId" labelText="Session ID" placeholder="Leave blank for new session" value="{oldSession.id}"/>
+                        <TextInput id="myName" labelText="Your Name" placeholder="What should we call you?" value="{session.my_name}" required/>
+                        <TextInput id="sessionId" labelText="Session ID" placeholder="Leave blank for new session" value="{session.id > 0 ? session.id : ''}"/>
                     </FormGroup>
                     <Button type="submit">Let's go!</Button>
                 </Form>

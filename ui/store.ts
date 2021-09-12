@@ -31,6 +31,7 @@ function sendJson(data) {
 }
 
 export enum Vote {
+    Secret = "Secret",
     Unknown = "Unknown",
     One = "One",
     Two = "Two",
@@ -64,7 +65,7 @@ export interface VotingSession {
 export interface VotingIssue {
     id: number,
     state: VotingState,
-    votes: Record<string, Vote | boolean>,
+    votes: Record<string, Vote>,
     trello_card: string | null,
     outcome: Vote
 }
@@ -236,7 +237,7 @@ const messageHandlers = {
                 console.log("Received vote for unknown issue")
                 return current
             }
-            current.votes[participant_name] = true
+            current.votes[participant_name] = Vote.Secret
             return currentIssue = current
         })
     }

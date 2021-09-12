@@ -115,6 +115,7 @@ pub enum PokerMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Vote {
+    Secret,
     Unknown,
     One,
     Two,
@@ -184,6 +185,20 @@ impl VotingIssue {
             outcome: None,
             state: VotingState::Opening,
             trello_card,
+        }
+    }
+
+    pub fn clone_blinded(&self) -> VotingIssue {
+        let votes: HashMap<String, Vote> = match self.state.clone() {
+            VotingState::Closing => self.votes.clone(),
+            _ => self.votes.iter().map(|entry| { (entry.0.clone(), Vote::Secret) }).collect()
+        };
+        VotingIssue {
+            id: self.id.clone(),
+            votes,
+            outcome: self.outcome.clone(),
+            state: self.state.clone(),
+            trello_card: self.trello_card.clone(),
         }
     }
 }
@@ -383,7 +398,7 @@ impl Server {
             participant_id,
             PokerMessage::SessionInfoResponse {
                 session_id: session.id,
-                current_issue: session.current_issue,
+                current_issue: session.current_issue.clone_blinded(),
                 current_participants: current_participant_names,
             },
         );
@@ -426,7 +441,7 @@ impl Server {
             // and once they were added, let them know that they successfully joined
             let message = PokerMessage::SessionInfoResponse {
                 session_id: session.id,
-                current_issue: session.current_issue.clone(),
+                current_issue: session.current_issue.clone_blinded(),
                 current_participants: session.participant_names(),
             };
             self.send_message(participant_id, message);

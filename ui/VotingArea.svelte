@@ -19,10 +19,13 @@
         issueUnsubscribe()
     })
 
+    let availableVotes = Object.keys(Vote)
+    availableVotes.shift()
+
 </script>
 <div class="voting-area-container">
     <div class="voting-area">
-        {#each Object.keys(Vote) as vote}
+        {#each availableVotes as vote}
             <VoteCard vote="{vote}" disabled="{didVote}"/>
         {/each}
     </div>

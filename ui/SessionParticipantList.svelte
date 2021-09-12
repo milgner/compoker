@@ -1,12 +1,8 @@
 <script lang="ts">
-    import {
-        StructuredList,
-        StructuredListCell,
-        StructuredListRow,
-    } from "carbon-components-svelte";
+    import {StructuredList, StructuredListCell, StructuredListRow,} from "carbon-components-svelte";
     import Checkmark20 from "carbon-icons-svelte/lib/Checkmark20";
     import Hourglass20 from "carbon-icons-svelte/lib/Hourglass20";
-    import { sessionStore, issueStore } from "./store";
+    import {issueStore, sessionStore, Vote} from "./store";
     import {onDestroy} from "svelte";
 
     let session;
@@ -17,7 +13,7 @@
     });
 
     const unsubscribeIssue = issueStore.subscribe((updated) => {
-       currentIssue = updated;
+        currentIssue = updated;
     });
 
     onDestroy(() => {
@@ -29,8 +25,19 @@
 <StructuredList condensed>
     {#each session.participants as participant}
         <StructuredListRow>
-            <StructuredListCell>{#if currentIssue.votes[participant]}<Checkmark20 />{:else}<Hourglass20/>{/if}</StructuredListCell>
+            <StructuredListCell>
+                {#if currentIssue.votes[participant]}
+                    <Checkmark20/>
+                {:else}
+                    <Hourglass20/>
+                {/if}
+            </StructuredListCell>
             <StructuredListCell>{participant}</StructuredListCell>
+            <StructuredListCell>
+                {#if currentIssue.votes[participant] && currentIssue.votes[participant] != Vote.Secret }
+                    {currentIssue.votes[participant]}
+                {/if}
+            </StructuredListCell>
         </StructuredListRow>
     {/each}
 </StructuredList>

@@ -1,6 +1,33 @@
 <script lang="ts">
-	import { Router } from "@roxi/routify";
-	import { routes } from "../.routify/routes";
-    import './store';
+    import {
+        Header,
+        HeaderNav,
+        HeaderNavItem,
+        Content
+    } from "carbon-components-svelte";
+
+    import Session from "./Session.svelte";
+    import JoinOrCreateSession from "./JoinOrCreateSession.svelte";
+
+    let isSideNavOpen = false;
+
+    import sessionStore from "./store";
+    let session;
+
+    sessionStore.subscribe(value => {
+        session = value;
+    });
 </script>
-<Router {routes} />
+<main>
+    <Header platformName="Svactix Poker" bind:isSideNavOpen>
+        <HeaderNav>
+        </HeaderNav>
+    </Header>
+    <Content>
+        {#if session.id > 0}
+            <Session></Session>
+        {:else}
+            <JoinOrCreateSession></JoinOrCreateSession>
+        {/if}
+    </Content>
+</main>

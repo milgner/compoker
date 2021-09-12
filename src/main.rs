@@ -19,8 +19,8 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 struct ClientConnection {
     hb: std::time::Instant,
     server: Addr<Server>,
-    participant_id: usize,
-    session_id: usize, // ensure that the client will only ever be in one session - keinen Quatsch machen!
+    participant_id: u32,
+    session_id: u32, // ensure that the client will only ever be in one session - keinen Quatsch machen!
 }
 
 impl ClientConnection {
@@ -110,7 +110,9 @@ impl Handler<PokerMessage> for ClientConnection {
     fn handle(&mut self, msg: PokerMessage, ctx: &mut Self::Context) {
         match msg {
             // if the server sends back a session id, jot it down so we can use it for Disconnect
-            PokerMessage::JoinSessionRequest { session_id, .. } => self.session_id = session_id,
+            PokerMessage::SessionInfoResponse { session_id, .. } => {
+                self.session_id = session_id;
+            },
             _ => ()
         }
         let serialized = serde_json::to_string(&msg).unwrap_or("Shit!".to_string());

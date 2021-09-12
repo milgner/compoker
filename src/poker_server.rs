@@ -8,12 +8,12 @@ use rand::{self, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 // helper function to generate a random id string
-fn generate_random_id() -> usize {
-    thread_rng().gen::<usize>()
+fn generate_random_id() -> u32 {
+    thread_rng().gen::<u32>()
 }
 
 #[derive(Message)]
-#[rtype(result = "usize")] // return participant id
+#[rtype(result = "u32")] // return participant id
 pub struct Connect {
     pub addr: Recipient<PokerMessage>,
 }
@@ -21,11 +21,11 @@ pub struct Connect {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
-    pub participant_id: usize,
-    pub session_id: usize,
+    pub participant_id: u32,
+    pub session_id: u32,
 }
 
-fn zero_usize() -> usize {
+fn zero_id() -> u32 {
     0
 }
 
@@ -35,23 +35,23 @@ fn zero_usize() -> usize {
                         // the participant id is then filled in through the `ClientConnection`
 pub enum PokerMessage {
     CreateSessionRequest {
-        #[serde(default = "zero_usize")]
-        participant_id: usize,
+        #[serde(default = "zero_id")]
+        participant_id: u32,
         participant_name: String,
     },
     JoinSessionRequest {
-        #[serde(default = "zero_usize")]
-        participant_id: usize,
-        session_id: usize,
+        #[serde(default = "zero_id")]
+        participant_id: u32,
+        session_id: u32,
         participant_name: String,
     },
     SessionInfoResponse {
-        session_id: usize,
+        session_id: u32,
         current_issue: VotingIssue,
         current_participants: Vec<String>,
     },
     SessionUnknownResponse {
-        session_id: usize,
+        session_id: u32,
     },
     ParticipantJoinAnnouncement {
         participant_name: String,
@@ -63,14 +63,14 @@ pub enum PokerMessage {
         issue: VotingIssue,
     },
     VoteRequest {
-        #[serde(default = "zero_usize")]
-        participant_id: usize,
-        issue_id: usize,
+        #[serde(default = "zero_id")]
+        participant_id: u32,
+        issue_id: u32,
         vote: Vote,
     },
     VoteReceipt,
     VotingResultsRevelation {
-        issue_id: usize,
+        issue_id: u32,
         votes: HashMap<String, Vote>,
         outcome: Vote,
     },
@@ -97,7 +97,7 @@ pub enum VotingState {
 }
 
 pub struct VotingParticipant {
-    id: usize,
+    id: u32,
     name: String,
 }
 
@@ -111,14 +111,14 @@ impl Clone for VotingParticipant {
 }
 
 impl VotingParticipant {
-    pub fn new(id: usize, name: String) -> VotingParticipant {
+    pub fn new(id: u32, name: String) -> VotingParticipant {
         VotingParticipant { id, name }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct VotingIssue {
-    id: usize,
+    id: u32,
     state: VotingState,
     trello_card: Option<String>,
     // further abstraction TBD
@@ -152,13 +152,13 @@ impl VotingIssue {
 }
 
 struct VotingSession {
-    id: usize,
+    id: u32,
     participants: Vec<VotingParticipant>,
     current_issue: VotingIssue,
 }
 
 impl VotingSession {
-    pub fn new(session_id: usize, initiator_id: usize, initiator_name: String) -> VotingSession {
+    pub fn new(session_id: u32, initiator_id: u32, initiator_name: String) -> VotingSession {
         VotingSession {
             id: session_id,
             participants: vec![VotingParticipant::new(initiator_id, initiator_name)],
@@ -182,8 +182,8 @@ impl Clone for VotingSession {
 }
 
 pub struct Server {
-    sessions: HashMap<usize, VotingSession>,
-    clients: HashMap<usize, Recipient<PokerMessage>>,
+    sessions: HashMap<u32, VotingSession>,
+    clients: HashMap<u32, Recipient<PokerMessage>>,
 }
 
 impl Server {
@@ -194,7 +194,7 @@ impl Server {
         }
     }
 
-    fn create_session(&mut self, initiator_id: usize, initiator_name: String) -> VotingSession {
+    fn create_session(&mut self, initiator_id: u32, initiator_name: String) -> VotingSession {
         let session_id = generate_random_id();
         let session = VotingSession::new(session_id, initiator_id, initiator_name);
         self.sessions.insert(session_id, session.clone());
@@ -202,7 +202,7 @@ impl Server {
     }
 
     // dispatch the message to the right participant
-    fn send_message(&self, participant_id: usize, message: PokerMessage) {
+    fn send_message(&self, participant_id: u32, message: PokerMessage) {
         if let Some((_, recipient)) = self
             .clients
             .iter()
@@ -223,9 +223,9 @@ impl Actor for Server {
 }
 
 impl Handler<Connect> for Server {
-    type Result = usize;
+    type Result = u32;
 
-    fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> usize {
+    fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> u32 {
         let client_id = generate_random_id();
         self.clients.insert(client_id.clone(), msg.addr);
         client_id
@@ -240,13 +240,14 @@ impl Handler<Disconnect> for Server {
             if session.participants.len() == 1 {
                 self.sessions.remove(&msg.session_id);
             } else {
+                // TODO: it should be perfectly acceptable to factor this out but it does not work
                 if let Some(pos) = session
                     .participants
                     .iter()
                     .position(|p| p.id == msg.participant_id)
                 {
                     let removed = session.participants.remove(pos);
-                    let participant_ids: Vec<usize> =
+                    let participant_ids: Vec<u32> =
                         session.participants.iter().map(|p| p.id).collect();
                     participant_ids.iter().for_each(|p| {
                         let message = PokerMessage::ParticipantLeaveAnnouncement {
@@ -293,7 +294,7 @@ impl Handler<PokerMessage> for Server {
 }
 
 impl Server {
-    fn handle_create_session_request(&mut self, participant_id: usize, participant_name: String) {
+    fn handle_create_session_request(&mut self, participant_id: u32, participant_name: String) {
         let session = self.create_session(participant_id, participant_name);
         let current_participant_names = session.participant_names();
         self.send_message(
@@ -308,12 +309,12 @@ impl Server {
 
     fn handle_join_session_request(
         &mut self,
-        session_id: usize,
-        participant_id: usize,
+        session_id: u32,
+        participant_id: u32,
         participant_name: String,
     ) {
         if let Some(session) = self.sessions.get_mut(&session_id) {
-            let current_participant_ids: Vec<usize> =
+            let current_participant_ids: Vec<u32> =
                 session.participants.iter().map(|p| p.id).collect();
             let message = PokerMessage::SessionInfoResponse {
                 session_id: session.id,

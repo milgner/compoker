@@ -43,7 +43,8 @@
         position: absolute;
         font-size: 8em;
         z-index: 1;
-        mix-blend-mode: color-burn;
+        mix-blend-mode: screen;
+        color: gray;
         line-height: 200px;
     }
     .vote-card {

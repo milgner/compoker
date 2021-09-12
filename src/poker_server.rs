@@ -188,6 +188,7 @@ impl VotingIssue {
         }
     }
 
+    // clone this issue but with all votes set to Secret
     pub fn clone_blinded(&self) -> VotingIssue {
         let votes: HashMap<String, Vote> = match self.state.clone() {
             VotingState::Closing => self.votes.clone(),
@@ -521,14 +522,25 @@ impl Server {
                 return;
             }
             let participant_ids = session.participant_ids();
-            participant_ids.iter().for_each(|p| {
+            let all_votes_cast = participant_ids.len() == session.current_issue.votes.len();
+            let issue_id = session.current_issue.id;
+            let votes = session.current_issue.votes.clone();
+
+            participant_ids.iter().for_each(|&p| {
                 self.send_message(
-                    *p,
+                    p,
                     PokerMessage::VoteReceiptAnnouncement {
                         participant_name: participant_name.to_string(),
                         issue_id,
                     },
                 );
+                if all_votes_cast {
+                    self.send_message(p, PokerMessage::VotingResultsRevelation {
+                        issue_id: issue_id.clone(),
+                        votes: votes.clone(),
+                        outcome: Vote::Unknown, // TODO: determine outcome from votes cast
+                    });
+                }
             });
         }
     }

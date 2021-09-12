@@ -240,6 +240,17 @@ const messageHandlers = {
             current.votes[participant_name] = Vote.Secret
             return currentIssue = current
         })
+    },
+    VotingResultsRevelation: ({ issue_id, votes, outcome }) => {
+        issueStore.update((current) => {
+            if (current.id != issue_id) {
+                console.log("Received information about unknown vote")
+                return current
+            }
+            current.votes = votes
+            current.outcome = outcome
+            return currentIssue = current
+        })
     }
 }
 

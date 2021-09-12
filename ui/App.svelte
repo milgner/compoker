@@ -24,10 +24,10 @@
         </HeaderNav>
     </Header>
     <Content>
-        {#if session.id > 0}
-            <Session></Session>
+        {#if session.error === null}
+            <Session />
         {:else}
-            <JoinOrCreateSession></JoinOrCreateSession>
+            <JoinOrCreateSession />
         {/if}
     </Content>
 </main>

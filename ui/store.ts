@@ -7,6 +7,23 @@ socket.addEventListener("open", function (event) {
     console.log("It's open");
 });
 
+async function waitForOpenSocket() {
+    return new Promise<void>((resolve, reject) => {
+        if (socket.readyState !== socket.OPEN) {
+            socket.addEventListener("open", (_) => {
+                resolve();
+            })
+            setTimeout(() => {
+                if (socket.readyState !== socket.OPEN) {
+                    reject();
+                }
+            }, 5000);
+        } else {
+            resolve();
+        }
+    });
+}
+
 function sendJson(data) {
     if (socket.readyState <= 1) {
         socket.send(JSON.stringify(data));
@@ -25,6 +42,11 @@ export enum Vote {
     Infinite = "Infinite",
 }
 
+export enum SessionJoinError {
+    UnknownSession = "UnknownSession",
+    ParticipantNameTaken = "ParticipantNameTaken",
+}
+
 export enum VotingState {
     Opening = "Opening",
     Voting = "Voting",
@@ -32,6 +54,7 @@ export enum VotingState {
 }
 
 export interface VotingSession {
+    error: SessionJoinError | null,
     id: number,
     my_name: string,
     participants: string[],
@@ -46,13 +69,17 @@ export interface VotingIssue {
     outcome: Vote
 }
 
-interface SessionStore extends Writable<VotingSession> {
+export type Store<T> = Writable<T> & { get(): T };
+
+interface SessionStore extends Store<VotingSession> {
     createSession(name: string);
+
     joinSession(session_id: number, name: string);
 }
 
 
 const blankSession: VotingSession = {
+    error: null,
     id: 0,
     my_name: "",
     participants: [],
@@ -65,47 +92,92 @@ const blankSession: VotingSession = {
     }
 }
 
-function createSessionStore(): SessionStore  {
-    const {subscribe, set, update} = writable<VotingSession>(blankSession)
+const LOCAL_STORAGE_KEY = "session";
+let currentValue: VotingSession;
 
-    return {
-        subscribe,
-        update,
-        set,
-        createSession: (my_name: string) => {
-            sendJson({
-                CreateSessionRequest: {
-                    participant_name: my_name,
-                }
-            });
-        },
-        joinSession: (session_id: number, my_name: string) => {
-            sendJson({
-                JoinSessionRequest: {
-                    participant_name: my_name,
-                    session_id
-                }
+function createSession(my_name: string) {
+    currentValue.my_name = my_name;
+    sendJson({
+        CreateSessionRequest: {
+            participant_name: my_name,
+        }
+    });
+}
+
+function joinSession(session_id: number, my_name: string) {
+    currentValue.my_name = my_name;
+    sendJson({
+        JoinSessionRequest: {
+            participant_name: my_name,
+            session_id
+        }
+    })
+}
+
+function createSessionStore(): SessionStore {
+    const saveState = (session: VotingSession): VotingSession => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(session, ["id", "my_name"]));
+        return currentValue = session;
+    }
+
+    let persistedState = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (persistedState === null) {
+        currentValue = blankSession;
+        saveState(currentValue);
+    } else {
+        currentValue = {
+            ...blankSession,
+            ...JSON.parse(persistedState)
+        };
+        if (currentValue.id > 0) {
+            waitForOpenSocket().then(() => {
+                joinSession(currentValue.id, currentValue.my_name);
             })
         }
     }
+
+    const {subscribe, set, update} = writable<VotingSession>(currentValue)
+
+    return {
+        subscribe,
+        update: (callback) => {
+            update((oldValue) => saveState(callback(oldValue)));
+        },
+        get: () => currentValue,
+        set: (session: VotingSession) => {
+            return set(saveState(session));
+        },
+        createSession,
+        joinSession
+    }
 }
 
-const sessionStore = createSessionStore();
-
 const messageHandlers = {
-    SessionInfoResponse: ({ session_id, current_issue, current_participants }: { session_id: number, current_issue: VotingIssue, current_participants: string[]}) => {
+    SessionInfoResponse: ({
+                              session_id,
+                              current_issue,
+                              current_participants
+                          }: { session_id: number, current_issue: VotingIssue, current_participants: string[] }) => {
         sessionStore.update((current) => {
                 return {
                     ...current,
                     current_issue,
+                    error: null,
                     id: session_id,
                     participants: current_participants,
                 }
             }
         );
     },
-    SessionUnknownResponse: ({ session_id }) => {
-        sessionStore.set(blankSession)
+    SessionJoinErrorResponse: ({session_id, error}) => {
+        console.log(`Failed to join session: ${error}`);
+        sessionStore.update((current) => {
+          return {
+              ...current,
+              id: session_id,
+              error: error,
+          }
+        })
     },
     ParticipantJoinAnnouncement: ({participant_name}) => {
         sessionStore.update((current) => {
@@ -132,4 +204,5 @@ socket.addEventListener("message", function (event) {
     }
 });
 
+const sessionStore = createSessionStore();
 export default sessionStore;

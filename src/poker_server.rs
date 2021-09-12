@@ -2,9 +2,10 @@
 //! their participants and current votes
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use actix::prelude::*;
-use rand::{self, thread_rng, Rng};
+use rand::{self, Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 
 // helper function to generate a random id string
@@ -29,10 +30,16 @@ fn zero_id() -> u32 {
     0
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum SessionJoinError {
+    UnknownSession,
+    ParticipantNameTaken,
+}
+
 #[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")] // responses are sent out asynchronously
-                        // participant ids always use Option<> so that they can be deserialized from JSON
-                        // the participant id is then filled in through the `ClientConnection`
+// participant ids always use Option<> so that they can be deserialized from JSON
+// the participant id is then filled in through the `ClientConnection`
 pub enum PokerMessage {
     CreateSessionRequest {
         #[serde(default = "zero_id")]
@@ -50,8 +57,9 @@ pub enum PokerMessage {
         current_issue: VotingIssue,
         current_participants: Vec<String>,
     },
-    SessionUnknownResponse {
+    SessionJoinErrorResponse {
         session_id: u32,
+        error: SessionJoinError,
     },
     ParticipantJoinAnnouncement {
         participant_name: String,
@@ -183,6 +191,7 @@ impl Clone for VotingSession {
 
 pub struct Server {
     sessions: HashMap<u32, VotingSession>,
+    timeout_sessions: HashMap<u32, std::time::Instant>,
     clients: HashMap<u32, Recipient<PokerMessage>>,
 }
 
@@ -191,6 +200,7 @@ impl Server {
         Server {
             sessions: HashMap::new(),
             clients: HashMap::new(),
+            timeout_sessions: HashMap::new(),
         }
     }
 
@@ -220,6 +230,10 @@ impl Server {
 
 impl Actor for Server {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        self.start_session_timeout_check(ctx);
+    }
 }
 
 impl Handler<Connect> for Server {
@@ -238,7 +252,8 @@ impl Handler<Disconnect> for Server {
     fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) {
         if let Some(session) = self.sessions.get_mut(&msg.session_id) {
             if session.participants.len() == 1 {
-                self.sessions.remove(&msg.session_id);
+                session.participants.clear();
+                self.timeout_sessions.insert(session.id, std::time::Instant::now());
             } else {
                 // TODO: it should be perfectly acceptable to factor this out but it does not work
                 if let Some(pos) = session
@@ -260,10 +275,12 @@ impl Handler<Disconnect> for Server {
                 }
             }
         } else {
-            println!(
-                "Client is trying to leave non-existing session {}",
-                msg.session_id
-            );
+            if msg.session_id > 0 {
+                println!(
+                    "Client is trying to leave non-existing session {}",
+                    msg.session_id
+                );
+            }
         }
 
         self.clients.remove(&msg.participant_id);
@@ -293,7 +310,27 @@ impl Handler<PokerMessage> for Server {
     }
 }
 
+const SESSION_TIMEOUT: Duration = Duration::from_secs(20);
+const SESSION_TIMEOUT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
 impl Server {
+    fn start_session_timeout_check(&self, ctx: &mut Context<Server>) {
+        ctx.run_interval(SESSION_TIMEOUT_CHECK_INTERVAL, |act, _| {
+            let mut sessions_to_delete = Vec::new();
+            act.timeout_sessions.retain(|session_id, last_seen| -> bool {
+                if Instant::now().duration_since(*last_seen) > SESSION_TIMEOUT {
+                    sessions_to_delete.push(session_id.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            act.sessions.retain(|session_id, _| -> bool {
+                !sessions_to_delete.contains(&session_id)
+            });
+        });
+    }
+
     fn handle_create_session_request(&mut self, participant_id: u32, participant_name: String) {
         let session = self.create_session(participant_id, participant_name);
         let current_participant_names = session.participant_names();
@@ -314,19 +351,34 @@ impl Server {
         participant_name: String,
     ) {
         if let Some(session) = self.sessions.get_mut(&session_id) {
+            // if someone joins a session that was previously set to time out, it needs to be kept alive
+            self.timeout_sessions.remove(&session_id);
+
+            // now check that the name hasn't already been taken
+            if session.participants.iter().any(|p| p.name == participant_name) {
+                self.send_message(participant_id, PokerMessage::SessionJoinErrorResponse {
+                    session_id,
+                    error: SessionJoinError::ParticipantNameTaken
+                });
+                return;
+            }
+
+            // save the current participant list so we can notify them about someone joining
             let current_participant_ids: Vec<u32> =
                 session.participants.iter().map(|p| p.id).collect();
+            // add the new participant
+            session.participants.push(VotingParticipant::new(
+                participant_id,
+                participant_name.clone(),
+            ));
+            // and once they were added, let them know that they successfully joined
             let message = PokerMessage::SessionInfoResponse {
                 session_id: session.id,
                 current_issue: session.current_issue.clone(),
                 current_participants: session.participant_names(),
             };
-            // TODO: investigate parallelism
-            session.participants.push(VotingParticipant::new(
-                participant_id,
-                participant_name.clone(),
-            ));
             self.send_message(participant_id, message);
+            // notify everyone else about the new participant
             current_participant_ids.iter().for_each(|participant_id| {
                 let message = PokerMessage::ParticipantJoinAnnouncement {
                     participant_name: participant_name.clone(),
@@ -334,10 +386,9 @@ impl Server {
                 self.send_message(*participant_id, message);
             });
         } else {
-            self.send_message(
-                participant_id,
-                PokerMessage::SessionUnknownResponse { session_id },
-            );
+            self.send_message(participant_id, PokerMessage::SessionJoinErrorResponse {
+                session_id,
+                error: SessionJoinError::UnknownSession});
         }
     }
 }

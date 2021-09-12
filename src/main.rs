@@ -37,7 +37,6 @@ impl ClientConnection {
 impl Actor for ClientConnection {
     type Context = ws::WebsocketContext<Self>;
 
-    /// Method is called on actor start. We start the heartbeat process here.
     fn started(&mut self, ctx: &mut Self::Context) {
         self.start_heartbeat(ctx);
         let addr = ctx.address();

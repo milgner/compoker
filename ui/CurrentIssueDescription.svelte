@@ -16,8 +16,9 @@
 
     let trelloCardHolder;
     afterUpdate(() => {
-       if (issue.trello_card?.match(/^https?:\/\/trello.com\/c\//)) {
-           trelloCardHolder.innerHTML = "";
+        trelloCardHolder.innerHTML = "";
+
+        if (issue.trello_card?.match(/^https?:\/\/trello.com\/c\//)) {
            window.TrelloCards.create(issue.trello_card, trelloCardHolder, {
                compact: true,
            });
@@ -28,7 +29,7 @@
 </script>
 
 <div class="issue-description">
-    <TextInput placeholder="Insert Trello card URL" value="{issue.trello_card}" on:input={requestTopicChange}></TextInput>
+    <TextInput placeholder="Describe issue or paste Trello card URL" value="{issue.trello_card}" on:input={requestTopicChange}></TextInput>
     <div class="trello-card-holder" bind:this={trelloCardHolder}>
     </div>
 </div>

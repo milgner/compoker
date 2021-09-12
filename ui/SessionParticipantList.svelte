@@ -6,23 +6,30 @@
     } from "carbon-components-svelte";
     import Checkmark20 from "carbon-icons-svelte/lib/Checkmark20";
     import Hourglass20 from "carbon-icons-svelte/lib/Hourglass20";
-    import sessionStore from "./store";
+    import { sessionStore, issueStore } from "./store";
+    import {onDestroy} from "svelte";
 
     let session;
+    let currentIssue;
 
-    sessionStore.subscribe((updated) => {
+    const unsubscribeSession = sessionStore.subscribe((updated) => {
         session = updated;
     });
 
-    function didVote(participant_name: string): boolean {
-        return Object.keys(session.current_issue.votes).includes(participant_name);
-    }
+    const unsubscribeIssue = issueStore.subscribe((updated) => {
+       currentIssue = updated;
+    });
+
+    onDestroy(() => {
+        unsubscribeIssue()
+        unsubscribeSession()
+    })
 </script>
 
 <StructuredList condensed>
     {#each session.participants as participant}
         <StructuredListRow>
-            <StructuredListCell>{#if didVote(participant)}<Checkmark20 />{:else}<Hourglass20/>{/if}</StructuredListCell>
+            <StructuredListCell>{#if currentIssue.votes[participant]}<Checkmark20 />{:else}<Hourglass20/>{/if}</StructuredListCell>
             <StructuredListCell>{participant}</StructuredListCell>
         </StructuredListRow>
     {/each}

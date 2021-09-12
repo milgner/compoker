@@ -1,7 +1,8 @@
 <script lang="ts">
     import {Button, Column, Form, FormGroup, Grid, Row, TextInput, Tile} from "carbon-components-svelte";
 
-    import sessionStore, {SessionJoinError} from './store';
+    import {sessionStore, SessionJoinError} from './store';
+    import {onDestroy} from "svelte";
 
     async function handleSubmit(event) {
         const form = event.target;
@@ -15,7 +16,8 @@
     }
 
     let session;
-    sessionStore.subscribe((updated) => session = updated);
+    const unsubscribe = sessionStore.subscribe((updated) => session = updated);
+    onDestroy(unsubscribe);
 </script>
 
 <Grid>

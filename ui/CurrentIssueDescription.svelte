@@ -1,31 +1,34 @@
+<svelte:options immutable={true}/>
 <script lang="ts">
-    import sessionStore from "./store";
+    import {issueStore} from "./store";
     import {TextInput} from "carbon-components-svelte";
-    import {afterUpdate, onMount} from "svelte";
+    import {afterUpdate, onDestroy, onMount} from "svelte";
 
-    let session;
+    let issue;
 
-    sessionStore.subscribe((updated) => {
-        session = updated;
+    const issueUnsubscribe = issueStore.subscribe((updated) => {
+        issue = updated;
     });
 
     async function requestTopicChange(event) {
-        sessionStore.changeTopic(event.target.value);
+        issueStore.changeTopic(event.target.value);
     }
 
     let trelloCardHolder;
     afterUpdate(() => {
-       if (session.current_issue?.trello_card?.match(/^https?:\/\/trello.com\/c\//)) {
+       if (issue.trello_card?.match(/^https?:\/\/trello.com\/c\//)) {
            trelloCardHolder.innerHTML = "";
-           window.TrelloCards.create(session.current_issue.trello_card, trelloCardHolder, {
+           window.TrelloCards.create(issue.trello_card, trelloCardHolder, {
                compact: true,
            });
        }
     });
+
+    onDestroy(issueUnsubscribe);
 </script>
 
 <div class="issue-description">
-    <TextInput placeholder="Insert Trello card URL" value="{session.current_issue.trello_card}" on:input={requestTopicChange}></TextInput>
+    <TextInput placeholder="Insert Trello card URL" value="{issue.trello_card}" on:input={requestTopicChange}></TextInput>
     <div class="trello-card-holder" bind:this={trelloCardHolder}>
     </div>
 </div>

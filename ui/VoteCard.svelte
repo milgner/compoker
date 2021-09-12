@@ -1,8 +1,9 @@
 <script lang="ts">
     import {ImageLoader} from "carbon-components-svelte";
-    import {Vote} from "./store";
+    import { issueStore, Vote} from "./store";
 
     export let vote: Vote;
+    export let disabled: boolean;
 
     const overlays = {
         [Vote.Unknown]: "?",
@@ -15,9 +16,16 @@
         [Vote.TwentyOne]: "21",
         [Vote.Infinite]: "∞",
     };
+
+    async function castVote() {
+        if (disabled) {
+            return
+        }
+        issueStore.castVote(vote);
+    }
 </script>
 
-<div class="vote-card">
+<div class="vote-card {disabled ? 'disabled' : ''}" on:click={castVote}>
     <div class="background">
         <ImageLoader class="background-image" src="/images/cards/{vote.toLowerCase()}.gif" alt="Complexity {vote}" ratio="3x4"/>
     </div>
@@ -33,6 +41,9 @@
         top: 0;
         z-index: 0;
         border-radius: 0.5em;
+    }
+    .vote-card:not(.disabled) {
+        cursor: pointer;
     }
     .foreground {
         top: 0;
@@ -53,5 +64,6 @@
         display: inline-block;
         position: relative;
         border-radius: 0.5em;
+        user-select: none;
     }
 </style>

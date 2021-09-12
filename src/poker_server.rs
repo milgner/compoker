@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use actix::prelude::*;
-use rand::{self, Rng, thread_rng};
+use rand::{self, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 // helper function to generate a random id string
@@ -38,35 +38,42 @@ pub enum SessionJoinError {
 
 #[derive(Serialize, Deserialize, Debug, Message)]
 #[rtype(result = "()")] // responses are sent out asynchronously
-// participant ids always use Option<> so that they can be deserialized from JSON
-// the participant id is then filled in through the `ClientConnection`
+                        // participant ids always use Option<> so that they can be deserialized from JSON
+                        // the participant id is then filled in through the `ClientConnection`
 pub enum PokerMessage {
+    // a client requests to create a session
     CreateSessionRequest {
         #[serde(default = "zero_id")]
         participant_id: u32,
         participant_name: String,
     },
+    // a client requests to join a session
     JoinSessionRequest {
         #[serde(default = "zero_id")]
         participant_id: u32,
         session_id: u32,
         participant_name: String,
     },
+    // the server sends the client the state of the current session
     SessionInfoResponse {
         session_id: u32,
         current_issue: VotingIssue,
         current_participants: Vec<String>,
     },
+    // the server notifies the client that joining the session failed
     SessionJoinErrorResponse {
         session_id: u32,
         error: SessionJoinError,
     },
+    // the server announces to everyone else that a new participant entered their session
     ParticipantJoinAnnouncement {
         participant_name: String,
     },
+    // the server announces to everyone else that someone left their session
     ParticipantLeaveAnnouncement {
         participant_name: String,
     },
+    // the client requests to change the issue being voted upon
     TopicChangeRequest {
         #[serde(default = "zero_id")]
         participant_id: u32,
@@ -74,16 +81,31 @@ pub enum PokerMessage {
         session_id: u32,
         trello_card: String,
     },
+    // the server announces a new issue being voted on
     VotingIssueAnnouncement {
         voting_issue: VotingIssue,
     },
+    // the client sends the server its vote
     VoteRequest {
         #[serde(default = "zero_id")]
         participant_id: u32,
+        #[serde(default = "zero_id")]
+        session_id: u32,
         issue_id: u32,
         vote: Vote,
     },
-    VoteReceipt,
+    // the server announces that it received a vote from a specific user
+    VoteReceiptAnnouncement {
+        participant_name: String,
+        issue_id: u32,
+    },
+    // the client requests for the votes to be revealed
+    VoteRevelationRequest {
+        #[serde(default = "zero_id")]
+        participant_id: u32,
+        issue_id: u32,
+    },
+    // the server reveals all the votes
     VotingResultsRevelation {
         issue_id: u32,
         votes: HashMap<String, Vote>,
@@ -264,7 +286,8 @@ impl Handler<Disconnect> for Server {
         if let Some(session) = self.sessions.get_mut(&msg.session_id) {
             if session.participants.len() == 1 {
                 session.participants.clear();
-                self.timeout_sessions.insert(session.id, std::time::Instant::now());
+                self.timeout_sessions
+                    .insert(session.id, std::time::Instant::now());
             } else {
                 // TODO: it should be perfectly acceptable to factor this out but it does not work
                 if let Some(pos) = session
@@ -317,8 +340,14 @@ impl Handler<PokerMessage> for Server {
             PokerMessage::TopicChangeRequest {
                 session_id,
                 participant_id,
-                trello_card
+                trello_card,
             } => self.handle_topic_change_request(session_id, participant_id, trello_card),
+            PokerMessage::VoteRequest {
+                session_id,
+                participant_id,
+                issue_id,
+                vote,
+            } => self.handle_vote_request(session_id, issue_id, participant_id, vote),
             _ => {
                 println!("Message not handled: {:?}", msg);
             }
@@ -333,17 +362,17 @@ impl Server {
     fn start_session_timeout_check(&self, ctx: &mut Context<Server>) {
         ctx.run_interval(SESSION_TIMEOUT_CHECK_INTERVAL, |act, _| {
             let mut sessions_to_delete = Vec::new();
-            act.timeout_sessions.retain(|session_id, last_seen| -> bool {
-                if Instant::now().duration_since(*last_seen) > SESSION_TIMEOUT {
-                    sessions_to_delete.push(session_id.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            act.sessions.retain(|session_id, _| -> bool {
-                !sessions_to_delete.contains(&session_id)
-            });
+            act.timeout_sessions
+                .retain(|session_id, last_seen| -> bool {
+                    if Instant::now().duration_since(*last_seen) > SESSION_TIMEOUT {
+                        sessions_to_delete.push(session_id.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+            act.sessions
+                .retain(|session_id, _| -> bool { !sessions_to_delete.contains(&session_id) });
         });
     }
 
@@ -371,11 +400,18 @@ impl Server {
             self.timeout_sessions.remove(&session_id);
 
             // now check that the name hasn't already been taken
-            if session.participants.iter().any(|p| p.name == participant_name) {
-                self.send_message(participant_id, PokerMessage::SessionJoinErrorResponse {
-                    session_id,
-                    error: SessionJoinError::ParticipantNameTaken
-                });
+            if session
+                .participants
+                .iter()
+                .any(|p| p.name == participant_name)
+            {
+                self.send_message(
+                    participant_id,
+                    PokerMessage::SessionJoinErrorResponse {
+                        session_id,
+                        error: SessionJoinError::ParticipantNameTaken,
+                    },
+                );
                 return;
             }
 
@@ -402,25 +438,82 @@ impl Server {
                 self.send_message(*participant_id, message);
             });
         } else {
-            self.send_message(participant_id, PokerMessage::SessionJoinErrorResponse {
-                session_id,
-                error: SessionJoinError::UnknownSession});
+            self.send_message(
+                participant_id,
+                PokerMessage::SessionJoinErrorResponse {
+                    session_id,
+                    error: SessionJoinError::UnknownSession,
+                },
+            );
         }
     }
 
-    fn handle_topic_change_request(&mut self, session_id: u32, _participant_id: u32, trello_card: String) {
+    fn handle_topic_change_request(
+        &mut self,
+        session_id: u32,
+        _participant_id: u32,
+        trello_card: String,
+    ) {
         if let Some(session) = self.sessions.get_mut(&session_id) {
-            let trello_card: Option<String> = if trello_card.len() > 0 { Some(trello_card) } else { None };
+            let trello_card: Option<String> = if trello_card.len() > 0 {
+                Some(trello_card)
+            } else {
+                None
+            };
             if session.current_issue.trello_card == trello_card {
-                return
+                return;
             }
             let issue = VotingIssue::new(trello_card);
             session.current_issue = issue.clone();
             let participant_ids = session.participant_ids();
             participant_ids.iter().for_each(|p| {
-               self.send_message(*p, PokerMessage::VotingIssueAnnouncement {
-                   voting_issue: issue.clone(),
-               })
+                self.send_message(
+                    *p,
+                    PokerMessage::VotingIssueAnnouncement {
+                        voting_issue: issue.clone(),
+                    },
+                );
+            });
+        }
+    }
+
+    fn handle_vote_request(
+        &mut self,
+        session_id: u32,
+        issue_id: u32,
+        participant_id: u32,
+        vote: Vote,
+    ) {
+        if let Some(session) = self.sessions.get_mut(&session_id) {
+            if session.current_issue.id != issue_id {
+                // TODO: notify sender about issue id mismatch
+                return;
+            }
+            let participant = session.participants.iter().find(|p| p.id == participant_id);
+            if participant.is_none() {
+                return;
+            }
+            let participant_name = participant.unwrap().name.clone();
+            let did_vote = session
+                .current_issue
+                .votes
+                .contains_key(participant_name.as_str());
+            session
+                .current_issue
+                .votes
+                .insert(participant_name.to_string(), vote);
+            if did_vote {
+                return;
+            }
+            let participant_ids = session.participant_ids();
+            participant_ids.iter().for_each(|p| {
+                self.send_message(
+                    *p,
+                    PokerMessage::VoteReceiptAnnouncement {
+                        participant_name: participant_name.to_string(),
+                        issue_id,
+                    },
+                );
             });
         }
     }

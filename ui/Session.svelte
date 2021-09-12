@@ -11,10 +11,12 @@
 
     let session;
 
-    import sessionStore from "./store";
-    sessionStore.subscribe((updated) => {
+    import { sessionStore } from "./store";
+    import {onDestroy} from "svelte";
+    const unsubscribe = sessionStore.subscribe((updated) => {
         session = updated;
     });
+    onDestroy(unsubscribe);
 </script>
 
 <Grid>

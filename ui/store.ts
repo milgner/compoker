@@ -64,41 +64,41 @@ export interface VotingSession {
 export interface VotingIssue {
     id: number,
     state: VotingState,
-    votes: Record<string, Vote>,
+    votes: Record<string, Vote | boolean>,
     trello_card: string | null,
     outcome: Vote
 }
 
 export type Store<T> = Writable<T> & { get(): T };
 
-interface SessionStore extends Store<VotingSession> {
+interface SessionStore extends Store<Partial<VotingSession>> {
     createSession(name: string);
 
     joinSession(session_id: number, name: string);
-
-    changeTopic(trello_card: string);
 }
 
 
-const blankSession: VotingSession = {
+const blankSession: Partial<VotingSession> = {
     error: null,
     id: 0,
     my_name: "",
-    participants: [],
-    current_issue: {
-        id: 0,
-        votes: {},
-        outcome: Vote.Unknown,
-        trello_card: null,
-        state: VotingState.Opening
-    }
+    participants: []
+}
+
+const blankIssue: VotingIssue = {
+    trello_card: null,
+    id: 0,
+    votes: {},
+    state: VotingState.Opening,
+    outcome: Vote.Unknown
 }
 
 const LOCAL_STORAGE_KEY = "session";
-let currentValue: VotingSession;
+let currentSession: Partial<VotingSession>;
+let currentIssue: VotingIssue;
 
 function createSession(my_name: string) {
-    currentValue.my_name = my_name;
+    currentSession.my_name = my_name;
     sendJson({
         CreateSessionRequest: {
             participant_name: my_name,
@@ -107,7 +107,7 @@ function createSession(my_name: string) {
 }
 
 function joinSession(session_id: number, my_name: string) {
-    currentValue.my_name = my_name;
+    currentSession.my_name = my_name;
     sendJson({
         JoinSessionRequest: {
             participant_name: my_name,
@@ -124,42 +124,66 @@ function changeTopic(trello_card: string) {
     })
 }
 
+function castVote(vote: Vote) {
+    sendJson({
+        VoteRequest: {
+            issue_id: currentIssue.id,
+            vote,
+        },
+    })
+}
+
+interface IssueStore extends Writable<VotingIssue> {
+    changeTopic(trello_card: string);
+    castVote(vote: Vote);
+}
+
+function createIssueStore(): IssueStore {
+    const { subscribe, set, update } = writable(blankIssue);
+    return {
+        subscribe,
+        set,
+        update,
+        changeTopic,
+        castVote
+    }
+}
+
 function createSessionStore(): SessionStore {
-    const saveState = (session: VotingSession): VotingSession => {
+    const saveState = (session: Partial<VotingSession>): Partial<VotingSession> => {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(session, ["id", "my_name"]));
-        return currentValue = session;
+        return currentSession = session;
     }
 
     let persistedState = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (persistedState === null) {
-        currentValue = blankSession;
-        saveState(currentValue);
+        currentSession = blankSession;
+        saveState(currentSession);
     } else {
-        currentValue = {
+        currentSession = {
             ...blankSession,
             ...JSON.parse(persistedState)
         };
-        if (currentValue.id > 0) {
+        if (currentSession.id > 0) {
             waitForOpenSocket().then(() => {
-                joinSession(currentValue.id, currentValue.my_name);
+                joinSession(currentSession.id, currentSession.my_name);
             })
         }
     }
 
-    const {subscribe, set, update} = writable<VotingSession>(currentValue)
+    const {subscribe, set, update} = writable<Partial<VotingSession>>(currentSession)
 
     return {
         subscribe,
         update: (callback) => {
             update((oldValue) => saveState(callback(oldValue)));
         },
-        get: () => currentValue,
+        get: () => currentSession,
         set: (session: VotingSession) => {
             return set(saveState(session));
         },
         createSession,
         joinSession,
-        changeTopic,
     }
 }
 
@@ -172,13 +196,14 @@ const messageHandlers = {
         sessionStore.update((current) => {
                 return {
                     ...current,
-                    current_issue,
                     error: null,
                     id: session_id,
                     participants: current_participants,
                 }
             }
         );
+        issueStore.set(current_issue);
+        currentIssue = current_issue;
     },
     SessionJoinErrorResponse: ({session_id, error}) => {
         console.log(`Failed to join session: ${error}`);
@@ -203,9 +228,16 @@ const messageHandlers = {
         })
     },
     VotingIssueAnnouncement: ({voting_issue}) => {
-        sessionStore.update((current) => {
-            current.current_issue = voting_issue
-            return current
+        issueStore.set(currentIssue = voting_issue)
+    },
+    VoteReceiptAnnouncement: ({ participant_name, issue_id }) => {
+        issueStore.update( (current) => {
+            if (current.id != issue_id) {
+                console.log("Received vote for unknown issue")
+                return current
+            }
+            current.votes[participant_name] = true
+            return currentIssue = current
         })
     }
 }
@@ -222,4 +254,5 @@ socket.addEventListener("message", function (event) {
 });
 
 const sessionStore = createSessionStore();
-export default sessionStore;
+const issueStore = createIssueStore();
+export { sessionStore, issueStore };

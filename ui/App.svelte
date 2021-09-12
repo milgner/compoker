@@ -11,12 +11,15 @@
 
     let isSideNavOpen = false;
 
-    import sessionStore from "./store";
+    import { sessionStore } from "./store";
+    import {onDestroy} from "svelte";
     let session;
 
-    sessionStore.subscribe(value => {
+    const unsubscribe = sessionStore.subscribe(value => {
         session = value;
     });
+
+    onDestroy(unsubscribe);
 </script>
 <main>
     <Header platformName="Svactix Poker" bind:isSideNavOpen>

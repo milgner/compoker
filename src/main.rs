@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 
 use actix::prelude::*;
 use actix_files::{Files, NamedFile};
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 
 use crate::poker_server::*;
@@ -14,7 +14,6 @@ mod poker_server;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// How long before lack of client response causes a timeout
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
-
 
 struct ClientConnection {
     hb: std::time::Instant,
@@ -40,7 +39,10 @@ impl Actor for ClientConnection {
     fn started(&mut self, ctx: &mut Self::Context) {
         self.start_heartbeat(ctx);
         let addr = ctx.address();
-        self.server.send(Connect { addr: addr.recipient() })
+        self.server
+            .send(Connect {
+                addr: addr.recipient(),
+            })
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
@@ -91,15 +93,41 @@ impl ClientConnection {
     // invoked when a message from the browser has been received
     fn process_message(&self, message: PokerMessage) {
         let message = match message {
-            PokerMessage::CreateSessionRequest { participant_name, .. } =>
-                PokerMessage::CreateSessionRequest { participant_id: self.participant_id, participant_name },
-            PokerMessage::VoteRequest { issue_id, vote, .. } =>
-                PokerMessage::VoteRequest { participant_id: self.participant_id, issue_id, vote },
-            PokerMessage::JoinSessionRequest { session_id, participant_name, .. } =>
-                PokerMessage::JoinSessionRequest { participant_id: self.participant_id, session_id, participant_name },
-            PokerMessage::TopicChangeRequest { trello_card, .. } =>
-                PokerMessage::TopicChangeRequest { trello_card, participant_id: self.participant_id, session_id: self.session_id },
-            _ => message
+            PokerMessage::CreateSessionRequest {
+                participant_name, ..
+            } => PokerMessage::CreateSessionRequest {
+                participant_id: self.participant_id,
+                participant_name,
+            },
+            PokerMessage::JoinSessionRequest {
+                session_id,
+                participant_name,
+                ..
+            } => PokerMessage::JoinSessionRequest {
+                participant_id: self.participant_id,
+                session_id,
+                participant_name,
+            },
+            PokerMessage::TopicChangeRequest { trello_card, .. } => {
+                PokerMessage::TopicChangeRequest {
+                    trello_card,
+                    participant_id: self.participant_id,
+                    session_id: self.session_id,
+                }
+            }
+            PokerMessage::VoteRequest { vote, issue_id, .. } => PokerMessage::VoteRequest {
+                vote,
+                issue_id,
+                participant_id: self.participant_id,
+                session_id: self.session_id,
+            },
+            PokerMessage::VoteRevelationRequest { issue_id, .. } => {
+                PokerMessage::VoteRevelationRequest {
+                    issue_id,
+                    participant_id: self.participant_id,
+                }
+            }
+            _ => message,
         };
         self.server.do_send(message);
     }
@@ -114,14 +142,13 @@ impl Handler<PokerMessage> for ClientConnection {
             // if the server sends back a session id, jot it down so we can use it for Disconnect
             PokerMessage::SessionInfoResponse { session_id, .. } => {
                 self.session_id = session_id;
-            },
-            _ => ()
+            }
+            _ => (),
         }
         let serialized = serde_json::to_string(&msg).unwrap_or("Shit!".to_string());
         ctx.text(serialized);
     }
 }
-
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ClientConnection {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
@@ -136,17 +163,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ClientConnection 
             Ok(ws::Message::Text(text)) => {
                 let deserialized = serde_json::from_str(&text);
                 match deserialized {
-                    Ok(message) => {
-                        self.process_message(message)
-                    }
+                    Ok(message) => self.process_message(message),
                     Err(e) => {
                         println!("failed to deserialize: {}, {}", text, e);
                     }
                 }
-            },
+            }
             Ok(ws::Message::Binary(_bin)) => {
                 println!("Unexpected binary message received. What's going on?!")
-            },
+            }
             Ok(ws::Message::Close(reason)) => {
                 ctx.close(reason);
                 ctx.stop();
@@ -156,7 +181,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ClientConnection 
     }
 }
 
-async fn websocket(req: HttpRequest, stream: web::Payload, srv: web::Data<Addr<Server>>) -> Result<HttpResponse, Error> {
+async fn websocket(
+    req: HttpRequest,
+    stream: web::Payload,
+    srv: web::Data<Addr<Server>>,
+) -> Result<HttpResponse, Error> {
     let connection = ClientConnection::new(srv.get_ref().clone());
     ws::start(connection, &req, stream)
 }
@@ -169,21 +198,24 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .data(poker_server.clone())
             .route("/ws", web::get().to(websocket))
-            .service(Files::new("/", "./public")
-                .prefer_utf8(true)
-                .index_file("index.html")
-                // for SPA behaviour: unknown/dynamic paths will be resolved through app routing mechanism
-                .default_handler(|req: ServiceRequest| {
-                    let (http_req, _payload) = req.into_parts();
+            .service(
+                Files::new("/", "./public")
+                    .prefer_utf8(true)
+                    .index_file("index.html")
+                    // for SPA behaviour: unknown/dynamic paths will be resolved through app routing mechanism
+                    .default_handler(|req: ServiceRequest| {
+                        let (http_req, _payload) = req.into_parts();
 
-                    async {
-                        let response = NamedFile::open("./public/index.html")?.into_response(&http_req)?;
-                        Ok(ServiceResponse::new(http_req, response))
-                    }
-                }))
+                        async {
+                            let response =
+                                NamedFile::open("./public/index.html")?.into_response(&http_req)?;
+                            Ok(ServiceResponse::new(http_req, response))
+                        }
+                    }),
+            )
     })
-        .bind("127.0.0.1:8080")?
-        .run();
+    .bind("127.0.0.1:8080")?
+    .run();
     println!("Server now running at 127.0.0.1:8080");
     http_server.await
 }

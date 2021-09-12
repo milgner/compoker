@@ -75,6 +75,8 @@ interface SessionStore extends Store<VotingSession> {
     createSession(name: string);
 
     joinSession(session_id: number, name: string);
+
+    changeTopic(trello_card: string);
 }
 
 
@@ -114,6 +116,14 @@ function joinSession(session_id: number, my_name: string) {
     })
 }
 
+function changeTopic(trello_card: string) {
+    sendJson({
+        TopicChangeRequest: {
+            trello_card
+        }
+    })
+}
+
 function createSessionStore(): SessionStore {
     const saveState = (session: VotingSession): VotingSession => {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(session, ["id", "my_name"]));
@@ -148,7 +158,8 @@ function createSessionStore(): SessionStore {
             return set(saveState(session));
         },
         createSession,
-        joinSession
+        joinSession,
+        changeTopic,
     }
 }
 
@@ -188,6 +199,12 @@ const messageHandlers = {
     ParticipantLeaveAnnouncement: ({participant_name}) => {
         sessionStore.update((current) => {
             current.participants = current.participants.filter((p) => p != participant_name)
+            return current
+        })
+    },
+    VotingIssueAnnouncement: ({voting_issue}) => {
+        sessionStore.update((current) => {
+            current.current_issue = voting_issue
             return current
         })
     }

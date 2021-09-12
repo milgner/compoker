@@ -56,7 +56,8 @@ impl Actor for ClientConnection {
         if self.participant_id > 0 {
             self.server.do_send(Disconnect {
                 participant_id: self.participant_id,
-                session_id: self.session_id });
+                session_id: self.session_id,
+            });
         } else {
             println!("Something is fishy: stopping before participant_id was set");
         }
@@ -96,6 +97,8 @@ impl ClientConnection {
                 PokerMessage::VoteRequest { participant_id: self.participant_id, issue_id, vote },
             PokerMessage::JoinSessionRequest { session_id, participant_name, .. } =>
                 PokerMessage::JoinSessionRequest { participant_id: self.participant_id, session_id, participant_name },
+            PokerMessage::TopicChangeRequest { trello_card, .. } =>
+                PokerMessage::TopicChangeRequest { trello_card, participant_id: self.participant_id, session_id: self.session_id },
             _ => message
         };
         self.server.do_send(message);

@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "routify -b --pages ui/pages && rollup -c",
+    "build": "rollup -c",
     "dev": "run-p dev:*",
     "dev:rollup": "rollup -c -w",
-    "dev:routify": "routify --pages ui/pages",
     "start": "sirv public --no-clear --single",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
@@ -14,7 +13,6 @@
     "@rollup/plugin-commonjs": "^17.0.0",
     "@rollup/plugin-node-resolve": "^11.0.0",
     "@rollup/plugin-typescript": "^8.0.0",
-    "@roxi/routify": "^2.18.3",
     "@tsconfig/svelte": "^2.0.0",
     "carbon-components-svelte": "^0.42.2",
     "npm-run-all": "^4.1.5",

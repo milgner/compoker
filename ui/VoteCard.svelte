@@ -26,8 +26,7 @@
 </script>
 
 <div class="vote-card {disabled ? 'disabled' : ''}" on:click={castVote}>
-    <div class="background">
-        <ImageLoader class="background-image" src="/images/cards/{vote.toLowerCase()}.gif" alt="Complexity {vote}" ratio="3x4"/>
+    <div class="background vote-{vote.toLowerCase()}">
     </div>
     <div class="foreground">
         {overlays[vote]}
@@ -36,11 +35,12 @@
 
 <style global>
     .background {
-        background-color: black;
         position: relative;
         top: 0;
         z-index: 0;
         border-radius: 0.5em;
+        width: 100%;
+        height: 100%;
     }
     .vote-card:not(.disabled) {
         cursor: pointer;
@@ -55,7 +55,7 @@
         font-size: 8em;
         z-index: 1;
         mix-blend-mode: screen;
-        color: gray;
+        color: #dddddd;
         line-height: 200px;
     }
     .vote-card {

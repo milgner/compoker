@@ -66,3 +66,40 @@ button:focus {
 	opacity: 0.7;
 	border-radius: 0.5em;
 }
+
+
+.vote-one {
+	background-color: #320E3B;
+}
+
+.vote-two {
+	background-color: #4C2A85;
+}
+
+.vote-three {
+	background-color: #6B7FD7;
+}
+
+.vote-five {
+	background-color: #BCEDF6;
+}
+
+.vote-eight {
+	background-color: #DDFBD2;
+}
+
+.vote-thirteen {
+	background-color: #AF5B5B;
+}
+
+.vote-twentyone {
+	background-color: #F0C808;
+}
+
+.vote-unknown {
+	background-color: #FFF1D0;
+}
+
+.vote-infinite {
+	background-color: #F03A47;
+}

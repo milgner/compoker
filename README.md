@@ -1,4 +1,4 @@
-# Svactix Poker
+# Compoker
 
 A complexity poker app built to learn Svelte and Actix.
 

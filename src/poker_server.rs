@@ -192,7 +192,11 @@ impl VotingIssue {
     pub fn clone_blinded(&self) -> VotingIssue {
         let votes: HashMap<String, Vote> = match self.state.clone() {
             VotingState::Closing => self.votes.clone(),
-            _ => self.votes.iter().map(|entry| { (entry.0.clone(), Vote::Secret) }).collect()
+            _ => self
+                .votes
+                .iter()
+                .map(|entry| (entry.0.clone(), Vote::Secret))
+                .collect(),
         };
         VotingIssue {
             id: self.id.clone(),
@@ -542,7 +546,7 @@ impl Server {
             let participant_ids = session.participant_ids();
             let all_votes_cast = participant_ids.len() == session.current_issue.votes.len();
             if !all_votes_cast {
-                return
+                return;
             }
             let outcome = Vote::Unknown;
             session.current_issue.outcome = Some(outcome.clone()); // TODO: determine outcome from votes cast
@@ -550,11 +554,14 @@ impl Server {
             let issue_id = session.current_issue.id;
             let votes = session.current_issue.votes.clone();
             participant_ids.iter().for_each(|&p| {
-                self.send_message(p, PokerMessage::VotingResultsRevelation {
-                    issue_id: issue_id.clone(),
-                    votes: votes.clone(),
-                    outcome: outcome.clone(),
-                });
+                self.send_message(
+                    p,
+                    PokerMessage::VotingResultsRevelation {
+                        issue_id: issue_id.clone(),
+                        votes: votes.clone(),
+                        outcome: outcome.clone(),
+                    },
+                );
             });
         }
     }

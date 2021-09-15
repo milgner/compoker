@@ -22,7 +22,7 @@
     onDestroy(unsubscribe);
 </script>
 <main>
-    <Header platformName="Svactix Poker" bind:isSideNavOpen>
+    <Header platformName="Compoker" bind:isSideNavOpen>
         <HeaderNav>
         </HeaderNav>
     </Header>

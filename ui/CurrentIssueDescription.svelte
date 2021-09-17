@@ -4,15 +4,29 @@
     import {TextInput} from "carbon-components-svelte";
     import {afterUpdate, onDestroy, onMount} from "svelte";
 
+    // so that not every keypress immediately updates the issue but waits a bit
+    const INPUT_DEBOUNCE_INTERVAL = 300;
+
     let issue;
 
     const issueUnsubscribe = issueStore.subscribe((updated) => {
         issue = updated;
     });
 
-    async function requestTopicChange(event) {
-        issueStore.changeTopic(event.target.value);
+    function debounce(duration: number, callback) {
+        let interval = null;
+
+        return function(params) {
+            if (interval) {
+                clearInterval(interval);
+            }
+            interval = setInterval(() => { callback(params) }, duration);
+        }
     }
+
+    const requestTopicChange = debounce(INPUT_DEBOUNCE_INTERVAL, (event) => {
+        issueStore.changeTopic(event.target.value);
+    })
 
     let trelloCardHolder;
     afterUpdate(() => {

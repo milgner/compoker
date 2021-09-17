@@ -1,5 +1,4 @@
 <script lang="ts">
-    import {ImageLoader} from "carbon-components-svelte";
     import { issueStore, Vote} from "./store";
 
     export let vote: Vote;

@@ -42,9 +42,16 @@
         width: 100%;
         height: 100%;
     }
+
+    .vote-card:hover .foreground {
+        transition: all 0.4s;
+        transform: rotateY(360deg);
+    }
+
     .vote-card:not(.disabled) {
         cursor: pointer;
     }
+
     .vote-card.active .background {
         border: 4px solid green;
     }

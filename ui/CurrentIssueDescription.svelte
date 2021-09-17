@@ -16,13 +16,13 @@
     function debounce(duration: number, callback: (...args: any[]) => any) {
         let interval = null;
 
-        return function(params) {
+        return function(...params: any[]) {
             if (interval != null) {
                 clearInterval(interval);
             }
             interval = setInterval(() => {
                 interval = null;
-                callback(params)
+                callback(...params)
             }, duration);
         }
     }

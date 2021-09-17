@@ -13,14 +13,17 @@
         issue = updated;
     });
 
-    function debounce(duration: number, callback) {
+    function debounce(duration: number, callback: (...args: any[]) => any) {
         let interval = null;
 
         return function(params) {
-            if (interval) {
+            if (interval != null) {
                 clearInterval(interval);
             }
-            interval = setInterval(() => { callback(params) }, duration);
+            interval = setInterval(() => {
+                interval = null;
+                callback(params)
+            }, duration);
         }
     }
 

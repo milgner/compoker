@@ -67,39 +67,38 @@ button:focus {
 	border-radius: 0.5em;
 }
 
+.vote-unknown {
+	background-color: #12a9b2;
+}
 
 .vote-one {
-	background-color: #320E3B;
+	background-color: #1291B5;
 }
 
 .vote-two {
-	background-color: #4C2A85;
+	background-color: #1278B8;
 }
 
 .vote-three {
-	background-color: #6B7FD7;
+	background-color: #125DBB;
 }
 
 .vote-five {
-	background-color: #BCEDF6;
+	background-color: #1141BE;
 }
 
 .vote-eight {
-	background-color: #DDFBD2;
+	background-color: #1125C2;
 }
 
 .vote-thirteen {
-	background-color: #AF5B5B;
+	background-color: #1A11C5;
 }
 
 .vote-twentyone {
-	background-color: #F0C808;
-}
-
-.vote-unknown {
-	background-color: #FFF1D0;
+	background-color: #3910C8;
 }
 
 .vote-infinite {
-	background-color: #F03A47;
+	background-color: #5910CB;
 }

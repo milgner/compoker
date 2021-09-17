@@ -6,11 +6,13 @@
     let my_name;
     let issue;
     let votingClosed = false;
+    let myVote = null;
 
     const sessionUnsubscribe = sessionStore.subscribe((updated) => { my_name = updated.my_name });
     const issueUnsubscribe = issueStore.subscribe((updated) => {
         issue = updated;
         votingClosed = updated.state == VotingState.Closing;
+        myVote = updated.votes[my_name];
     });
 
     onDestroy(() => {
@@ -25,7 +27,7 @@
 <div class="voting-area-container">
     <div class="voting-area">
         {#each availableVotes as vote}
-            <VoteCard vote="{vote}" disabled="{votingClosed}"/>
+            <VoteCard vote="{vote}" disabled="{votingClosed}" active="{ myVote == vote }"/>
         {/each}
     </div>
 </div>

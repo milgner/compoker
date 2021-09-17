@@ -2,7 +2,7 @@
     import {StructuredList, StructuredListCell, StructuredListRow,} from "carbon-components-svelte";
     import Checkmark20 from "carbon-icons-svelte/lib/Checkmark20";
     import Hourglass20 from "carbon-icons-svelte/lib/Hourglass20";
-    import {issueStore, sessionStore, Vote} from "./store";
+    import {issueStore, sessionStore, Vote, VotingState} from "./store";
     import {onDestroy} from "svelte";
 
     let session;
@@ -34,7 +34,7 @@
             </StructuredListCell>
             <StructuredListCell>{participant}</StructuredListCell>
             <StructuredListCell>
-                {#if currentIssue.votes[participant] && currentIssue.votes[participant] != Vote.Secret }
+                {#if currentIssue.state == VotingState.Closing }
                     {currentIssue.votes[participant]}
                 {/if}
             </StructuredListCell>

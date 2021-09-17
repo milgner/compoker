@@ -3,6 +3,7 @@
 
     export let vote: Vote;
     export let disabled: boolean;
+    export let active: boolean;
 
     const overlays = {
         [Vote.Unknown]: "?",
@@ -24,7 +25,7 @@
     }
 </script>
 
-<div class="vote-card {disabled ? 'disabled' : ''}" on:click={castVote}>
+<div class="vote-card {disabled ? 'disabled' : ''} {active ? 'active' : ''}" on:click={castVote}>
     <div class="background vote-{vote.toLowerCase()}">
     </div>
     <div class="foreground">
@@ -44,6 +45,22 @@
     .vote-card:not(.disabled) {
         cursor: pointer;
     }
+    .vote-card.active .background {
+        border: 4px solid green;
+    }
+
+    .vote-card.active .background::after {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        padding-right: 0.5em;
+        padding-bottom: 0.5em;
+        text-align: right;
+        color: green;
+        content: '✓';
+        font-size: larger;
+    }
+
     .foreground {
         top: 0;
         left: 0;

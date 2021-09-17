@@ -91,12 +91,13 @@ const blankIssue: VotingIssue = {
     id: 0,
     votes: {},
     state: VotingState.Opening,
-    outcome: Vote.Unknown
+    outcome: Vote.Unknown,
 }
 
 const LOCAL_STORAGE_KEY = "session";
 let currentSession: Partial<VotingSession>;
 let currentIssue: VotingIssue;
+let myVote: Vote;
 
 function createSession(my_name: string) {
     currentSession.my_name = my_name;
@@ -126,6 +127,7 @@ function changeTopic(trello_card: string) {
 }
 
 function castVote(vote: Vote) {
+    myVote = vote;
     sendJson({
         VoteRequest: {
             issue_id: currentIssue.id,
@@ -230,6 +232,7 @@ const messageHandlers = {
     },
     VotingIssueAnnouncement: ({voting_issue}) => {
         issueStore.set(currentIssue = voting_issue)
+        myVote = null
     },
     VoteReceiptAnnouncement: ({ participant_name, issue_id }) => {
         issueStore.update( (current) => {
@@ -237,7 +240,11 @@ const messageHandlers = {
                 console.log("Received vote for unknown issue")
                 return current
             }
-            current.votes[participant_name] = Vote.Secret
+            if (participant_name == currentSession.my_name) {
+                currentIssue.votes[participant_name] = myVote
+            } else {
+                current.votes[participant_name] = Vote.Secret
+            }
             return currentIssue = current
         })
     },

@@ -515,17 +515,10 @@ impl Server {
                 return;
             }
             let participant_name = participant.unwrap().name.clone();
-            let did_vote = session
-                .current_issue
-                .votes
-                .contains_key(participant_name.as_str());
             session
                 .current_issue
                 .votes
                 .insert(participant_name.to_string(), vote);
-            if did_vote {
-                return;
-            }
             {
                 session.participant_ids().iter().for_each(|&p| {
                     self.send_message(

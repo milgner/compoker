@@ -236,6 +236,10 @@ impl VotingSession {
     pub fn participant_ids(&self) -> Vec<u32> {
         self.participants.iter().map(|p| p.id.clone()).collect()
     }
+
+    pub fn all_votes_cast(&self) -> bool {
+        self.participants.iter().all(|p| self.current_issue.votes.contains_key(p.name.as_str()))
+    }
 }
 
 impl Clone for VotingSession {
@@ -543,8 +547,8 @@ impl Server {
     fn reveal_if_everyone_voted(&mut self, session_id: u32) {
         if let Some(session) = self.sessions.get_mut(&session_id) {
             let participant_ids = session.participant_ids();
-            let all_votes_cast = participant_ids.len() == session.current_issue.votes.len();
-            if !all_votes_cast {
+
+            if !session.all_votes_cast() {
                 return;
             }
             let outcome = Vote::Unknown;

@@ -18,11 +18,11 @@
 
         return function(...params: any[]) {
             if (interval != null) {
-                clearInterval(interval);
+                clearTimeout(interval);
             }
-            interval = setInterval(() => {
-                interval = null;
-                callback(...params)
+            interval = setTimeout(() => {
+                interval = null
+                callback(...params);
             }, duration);
         }
     }

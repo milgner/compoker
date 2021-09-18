@@ -189,13 +189,19 @@ impl VotingIssue {
     }
 
     // clone this issue but with all votes set to Secret
-    pub fn clone_blinded(&self) -> VotingIssue {
+    pub fn clone_blinded(&self, participant_name: Option<&String>) -> VotingIssue {
         let votes: HashMap<String, Vote> = match self.state.clone() {
             VotingState::Closing => self.votes.clone(),
             _ => self
                 .votes
                 .iter()
-                .map(|entry| (entry.0.clone(), Vote::Secret))
+                .map(|entry| {
+                    let vote = match participant_name {
+                        Some(p) if p == entry.0 => entry.1.clone(),
+                        _ => Vote::Secret
+                    };
+                    (entry.0.clone(), vote)
+                    })
                 .collect(),
         };
         VotingIssue {
@@ -398,13 +404,13 @@ impl Server {
     }
 
     fn handle_create_session_request(&mut self, participant_id: u32, participant_name: String) {
-        let session = self.create_session(participant_id, participant_name);
+        let session = self.create_session(participant_id, participant_name.clone());
         let current_participant_names = session.participant_names();
         self.send_message(
             participant_id,
             PokerMessage::SessionInfoResponse {
                 session_id: session.id,
-                current_issue: session.current_issue.clone_blinded(),
+                current_issue: session.current_issue.clone_blinded(Some(&participant_name)),
                 current_participants: current_participant_names,
             },
         );
@@ -447,7 +453,7 @@ impl Server {
             // and once they were added, let them know that they successfully joined
             let message = PokerMessage::SessionInfoResponse {
                 session_id: session.id,
-                current_issue: session.current_issue.clone_blinded(),
+                current_issue: session.current_issue.clone_blinded(Some(&participant_name)),
                 current_participants: session.participant_names(),
             };
             self.send_message(participant_id, message);

@@ -213,7 +213,7 @@ const messageHandlers = {
         sessionStore.update((current) => {
           return {
               ...current,
-              id: session_id,
+              id: error == SessionJoinError.ParticipantNameTaken ? session_id : null,
               error: error,
           }
         })

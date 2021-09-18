@@ -34,7 +34,7 @@
             </StructuredListCell>
             <StructuredListCell>{participant}</StructuredListCell>
             <StructuredListCell>
-                {#if currentIssue.state == VotingState.Closing }
+                {#if currentIssue.state == VotingState.Closing && currentIssue.votes[participant] }
                     {currentIssue.votes[participant]}
                 {/if}
             </StructuredListCell>

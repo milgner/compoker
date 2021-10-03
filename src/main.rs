@@ -1,9 +1,10 @@
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use actix::prelude::*;
 use actix_files::{Files, NamedFile};
+use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
-use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 
 use crate::poker_server::*;
@@ -190,10 +191,41 @@ async fn websocket(
     ws::start(connection, &req, stream)
 }
 
+const DEFAULT_PORT: u16 = 8080;
+const DEFAULT_INTERFACE: &str = "127.0.0.1";
+
+fn listen_port() -> u16 {
+    match std::env::var("PORT") {
+        Ok(port) => {
+            match u16::from_str(port.as_str()) {
+                Ok(port) => port,
+                Err(_) => {
+                    println!("Failed to parse port {}", port);
+                    DEFAULT_PORT
+                }
+            }
+        },
+        Err(_) => {
+            println!("No $PORT environment variable set");
+            DEFAULT_PORT
+        }
+    }
+}
+
+fn listen_interface() -> String {
+    match std::env::var("LISTEN_INTERFACE") {
+        Ok(interface) => interface,
+        Err(_) => {
+            println!("No $LISTEN_INTERFACE set, falling back to {}", DEFAULT_INTERFACE);
+            DEFAULT_INTERFACE.to_string()
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let poker_server = Server::new().start();
-
+    let listen_on = format!("{}:{}", listen_interface(), listen_port());
     let http_server = HttpServer::new(move || {
         App::new()
             .data(poker_server.clone())
@@ -214,8 +246,8 @@ async fn main() -> std::io::Result<()> {
                     }),
             )
     })
-    .bind("127.0.0.1:8080")?
-    .run();
-    println!("Server now running at 127.0.0.1:8080");
+        .bind(listen_on.clone())?
+        .run();
+    println!("Server now running at {}", listen_on);
     http_server.await
 }

@@ -161,6 +161,11 @@ function createIssueStore(): IssueStore {
 
 export type UserInfoStrategy = (username: string) => Promise<UserInfo> | undefined;
 
+interface GithubGitlabApiUserInfo {
+    name: string,
+    avatar_url: string
+}
+
 function lookupAvatarUrlFromGithub(username: string): Promise<UserInfo> | undefined {
     const githubUsername = username.match(/^(\w+)@github$/)
     if (githubUsername == null) {
@@ -168,16 +173,39 @@ function lookupAvatarUrlFromGithub(username: string): Promise<UserInfo> | undefi
     }
     return fetch(`https://api.github.com/users/${githubUsername[1]}`)
         .then((response) => response.json())
-        .then((json) => {
+        .then((json: GithubGitlabApiUserInfo) => {
             return {
-                display_name: json['name'],
-                avatar_url: json['avatar_url']
+                display_name: json.name,
+                avatar_url: json.avatar_url
             }
         })
 }
 
+function lookupAvatarUrlFromGitlab(username: string): Promise<UserInfo> | undefined {
+    // FIXME: can only look up from Gitlab.com at the moment
+    // but there's no easy way to detect whether it's from another Gitlab installation
+    // and adding the TLD would make it look like a real E-mail
+    const gitlabUsername = username.match(/^(\w+)@gitlab$/)
+    if (gitlabUsername == null) {
+        return undefined
+    }
+    return fetch(`https://gitlab.com/api/v4/users/?username=${gitlabUsername[1]}`)
+        .then((response) => response.json())
+        .then((json: Array<GithubGitlabApiUserInfo>) => {
+            if (json.length > 0) {
+                const userInfo = json[0];
+                return {
+                    display_name: userInfo.name,
+                    avatar_url: userInfo.avatar_url
+                }
+            }
+            return undefined;
+        })
+}
+
 const USER_INFO_STRATEGIES: UserInfoStrategy[] = [
-    lookupAvatarUrlFromGithub
+    lookupAvatarUrlFromGithub,
+    lookupAvatarUrlFromGitlab
 ];
 
 function lookupUserInfo(username: string) {

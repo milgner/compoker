@@ -5,9 +5,12 @@ import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
 import sveltePreprocess from 'svelte-preprocess';
 import typescript from '@rollup/plugin-typescript';
+import replace from '@rollup/plugin-replace';
 import css from 'rollup-plugin-css-only';
 
 const production = !process.env.ROLLUP_WATCH;
+
+const serverUrl = process.env.SERVER_URL || "ws://localhost:8080/ws";
 
 function serve() {
 	let server;
@@ -40,6 +43,13 @@ export default {
 		dir: './public/build'
 	},
 	plugins: [
+		replace({
+			values: {
+				'process.env.SERVER_URL': `"${serverUrl}"`
+			},
+			preventAssignment: true
+		}),
+
 		svelte({
 			preprocess: sveltePreprocess({ sourceMap: !production }),
 			compilerOptions: {

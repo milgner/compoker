@@ -1,6 +1,6 @@
 import {Writable, writable} from "svelte/store";
 
-const socket = new WebSocket("ws://localhost:8080/ws");
+const socket = new WebSocket(process.env.SERVER_URL);
 
 // Connection opened
 socket.addEventListener("open", function (event) {

@@ -70,6 +70,11 @@ export interface VotingIssue {
     outcome: Vote
 }
 
+export interface UserInfo {
+    display_name: string,
+    avatar_url: String | undefined,
+}
+
 export type Store<T> = Writable<T> & { get(): T };
 
 interface SessionStore extends Store<Partial<VotingSession>> {
@@ -78,6 +83,7 @@ interface SessionStore extends Store<Partial<VotingSession>> {
     joinSession(session_id: number, name: string);
 }
 
+export type UserInfoStore = Writable<Record<string, UserInfo>>;
 
 const blankSession: Partial<VotingSession> = {
     error: null,
@@ -138,11 +144,12 @@ function castVote(vote: Vote) {
 
 interface IssueStore extends Writable<VotingIssue> {
     changeTopic(trello_card: string);
+
     castVote(vote: Vote);
 }
 
 function createIssueStore(): IssueStore {
-    const { subscribe, set, update } = writable(blankIssue);
+    const {subscribe, set, update} = writable(blankIssue);
     return {
         subscribe,
         set,
@@ -150,6 +157,58 @@ function createIssueStore(): IssueStore {
         changeTopic,
         castVote
     }
+}
+
+export type UserInfoStrategy = (username: string) => Promise<UserInfo> | undefined;
+
+function lookupAvatarUrlFromGithub(username: string): Promise<UserInfo> | undefined {
+    const githubUsername = username.match(/^(\w+)@github$/)
+    if (githubUsername == null) {
+        return undefined
+    }
+    return fetch(`https://api.github.com/users/${githubUsername[1]}`)
+        .then((response) => response.json())
+        .then((json) => {
+            return {
+                display_name: json['name'],
+                avatar_url: json['avatar_url']
+            }
+        })
+}
+
+const USER_INFO_STRATEGIES: UserInfoStrategy[] = [
+    lookupAvatarUrlFromGithub
+];
+
+function lookupUserInfo(username: string) {
+    for (let strategy of USER_INFO_STRATEGIES) {
+        let user_info_promise = strategy(username)
+        if (user_info_promise) {
+            user_info_promise.then((user_info) => {
+                userInfoStore.update((current) => {
+                    current[username] = user_info
+                    return current
+                })
+            })
+        }
+    }
+}
+
+function ensureUserInStore(username: string) {
+    userInfoStore.update((currentUsers) => {
+        if (!currentUsers.hasOwnProperty(username)) {
+            currentUsers[username] = {
+                display_name: username,
+                avatar_url: undefined
+            }
+            lookupUserInfo(username)
+        }
+        return currentUsers
+    })
+}
+
+function createUserInfoStore(): UserInfoStore {
+    return writable<Record<string, UserInfo>>({});
 }
 
 function createSessionStore(): SessionStore {
@@ -197,6 +256,9 @@ const messageHandlers = {
                               current_participants
                           }: { session_id: number, current_issue: VotingIssue, current_participants: string[] }) => {
         sessionStore.update((current) => {
+                for (let username of current_participants) {
+                    ensureUserInStore(username);
+                }
                 return {
                     ...current,
                     error: null,
@@ -211,15 +273,16 @@ const messageHandlers = {
     SessionJoinErrorResponse: ({session_id, error}) => {
         console.log(`Failed to join session: ${error}`);
         sessionStore.update((current) => {
-          return {
-              ...current,
-              id: error == SessionJoinError.ParticipantNameTaken ? session_id : null,
-              error: error,
-          }
+            return {
+                ...current,
+                id: error == SessionJoinError.ParticipantNameTaken ? session_id : null,
+                error: error,
+            }
         })
     },
     ParticipantJoinAnnouncement: ({participant_name}) => {
         sessionStore.update((current) => {
+            ensureUserInStore(participant_name)
             current.participants.push(participant_name)
             return current
         })
@@ -234,8 +297,8 @@ const messageHandlers = {
         issueStore.set(currentIssue = voting_issue)
         myVote = null
     },
-    VoteReceiptAnnouncement: ({ participant_name, issue_id }) => {
-        issueStore.update( (current) => {
+    VoteReceiptAnnouncement: ({participant_name, issue_id}) => {
+        issueStore.update((current) => {
             if (current.id != issue_id) {
                 console.log("Received vote for unknown issue")
                 return current
@@ -248,7 +311,7 @@ const messageHandlers = {
             return currentIssue = current
         })
     },
-    VotingResultsRevelation: ({ issue_id, votes, outcome }) => {
+    VotingResultsRevelation: ({issue_id, votes, outcome}) => {
         issueStore.update((current) => {
             if (current.id != issue_id) {
                 console.log("Received information about unknown vote")
@@ -275,4 +338,5 @@ socket.addEventListener("message", function (event) {
 
 const sessionStore = createSessionStore();
 const issueStore = createIssueStore();
-export { sessionStore, issueStore };
+const userInfoStore = createUserInfoStore();
+export {sessionStore, issueStore, userInfoStore};

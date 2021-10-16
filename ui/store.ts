@@ -1,4 +1,5 @@
 import {Writable, writable} from "svelte/store";
+import { md5 } from "hash-wasm";
 
 const socket = new WebSocket(process.env.SERVER_URL);
 
@@ -166,22 +167,23 @@ interface GithubGitlabApiUserInfo {
     avatar_url: string
 }
 
-function lookupAvatarUrlFromGithub(username: string): Promise<UserInfo> | undefined {
+async function lookupUserInfoFromGithub(username: string): Promise<UserInfo | undefined> {
     const githubUsername = username.match(/^(\w+)@github$/)
     if (githubUsername == null) {
         return undefined
     }
-    return fetch(`https://api.github.com/users/${githubUsername[1]}`)
-        .then((response) => response.json())
-        .then((json: GithubGitlabApiUserInfo) => {
-            return {
-                display_name: json.name,
-                avatar_url: json.avatar_url
-            }
-        })
+    const response = await fetch(`https://api.github.com/users/${githubUsername[1]}`)
+    if (response.status != 200) {
+        return undefined
+    }
+    const json: GithubGitlabApiUserInfo = await response.json()
+    return {
+        display_name: json.name,
+        avatar_url: json.avatar_url
+    }
 }
 
-function lookupAvatarUrlFromGitlab(username: string): Promise<UserInfo> | undefined {
+async function lookupUserInfoFromGitlab(username: string): Promise<UserInfo | undefined> {
     // FIXME: can only look up from Gitlab.com at the moment
     // but there's no easy way to detect whether it's from another Gitlab installation
     // and adding the TLD would make it look like a real E-mail
@@ -189,35 +191,34 @@ function lookupAvatarUrlFromGitlab(username: string): Promise<UserInfo> | undefi
     if (gitlabUsername == null) {
         return undefined
     }
-    return fetch(`https://gitlab.com/api/v4/users/?username=${gitlabUsername[1]}`)
-        .then((response) => response.json())
-        .then((json: Array<GithubGitlabApiUserInfo>) => {
-            if (json.length > 0) {
-                const userInfo = json[0];
-                return {
-                    display_name: userInfo.name,
-                    avatar_url: userInfo.avatar_url
-                }
-            }
-            return undefined;
-        })
+    const response = await fetch(`https://gitlab.com/api/v4/users/?username=${gitlabUsername[1]}`)
+    if (response.status != 200) {
+        return undefined
+    }
+    const json: Array<GithubGitlabApiUserInfo> = await response.json()
+    if (json.length > 0) {
+        const userInfo = json[0]
+        return {
+            display_name: userInfo.name,
+            avatar_url: userInfo.avatar_url
+        }
+    }
 }
 
 const USER_INFO_STRATEGIES: UserInfoStrategy[] = [
-    lookupAvatarUrlFromGithub,
-    lookupAvatarUrlFromGitlab
+    lookupUserInfoFromGithub,
+    lookupUserInfoFromGitlab,
 ];
 
-function lookupUserInfo(username: string) {
+async function lookupUserInfo(username: string) {
     for (let strategy of USER_INFO_STRATEGIES) {
-        let user_info_promise = strategy(username)
-        if (user_info_promise) {
-            user_info_promise.then((user_info) => {
-                userInfoStore.update((current) => {
-                    current[username] = user_info
-                    return current
-                })
+        let user_info = await strategy(username)
+        if (user_info) {
+            userInfoStore.update((current) => {
+                current[username] = user_info
+                return current
             })
+            return
         }
     }
 }

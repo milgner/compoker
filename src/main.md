@@ -1,30 +1,35 @@
-//@ # A complexity poker server in Rust
-//@
-//@ This is another learning project for experimentation which, through a series
-//@ of happpy little accidents happens to result in usable software.
-//@
-//@ It's written in the [Rust programming language](https://www.rust-lang.org/)
-//@ using [Literate Programming](https://en.wikipedia.org/wiki/Literate_programming)
-//@ style.
-//@
-//@ We're going to use two main libraries:
-//@
-//@ [Riker](https://riker.rs/) for an actor-based approach
+# A complexity poker server in Rust
+
+This is another learning project for experimentation which, through a series
+of happpy little accidents happens to result in usable software.
+
+It's written in the [Rust programming language](https://www.rust-lang.org/)
+using [Literate Programming](https://en.wikipedia.org/wiki/Literate_programming)
+style.
+
+We're going to use two main libraries:
+
+[Riker](https://riker.rs/) for an actor-based approach
+```rust
 use riker::actors::*;
+```
 
-//@ and [warp](https://github.com/seanmonstar/warp) for the webserver part.
-//@ And yes, it looks like there are a lot of Star Trek fans in the Rust
-//@ community. 🤓
+and [warp](https://github.com/seanmonstar/warp) for the webserver part.
+And yes, it looks like there are a lot of Star Trek fans in the Rust
+community. 🤓
 
+```rust
 extern crate warp;
 use crate::warp::Filter;
+```
 
-//@ Let's get some basics out of the way...
-//@
-//@ ## Logging
-//@ We're also going to need to do some logging. Fern is an established logging 
-//@ library - let's use that.
+Let's get some basics out of the way...
 
+## Logging
+We're also going to need to do some logging. Fern is an established logging 
+library - let's use that.
+
+```rust
 extern crate fern;
 #[macro_use]
 extern crate log;
@@ -45,34 +50,36 @@ fn init_logging() -> Result<(), fern::InitError> {
         .apply()?;
     Ok(())
 }
+```
 
-//@ ## The actor hierarchy
-//@
-//@ At the top of our application-specific actor hierarchy we have two elements:
-//@ the poker server, which is responsible for coordinating the creation of
-//@ sessions and the web server which accepts websocket connections and connects
-//@ them with the poker server.
-//@
-//@ The full hierarchy should look something like this:
-//@
-//@ ```
-//@ compoker
-//@ └─ user
-//@    ├─ poker-server
-//@    │  ├─ session 23482384
-//@    │  │  ├─ participant 1
-//@    │  │  ├─ participant 2
-//@    │  │  └─ ...
-//@    │  └─ session 93483432
-//@    │     └─ ...
-//@    └─ web-server
-//@       ├─ connection 1
-//@       ├─ connection 2
-//@       └─ ...
-//@ ```
-//@
-//@ ## Actor: The Poker Server
+## The actor hierarchy
 
+At the top of our application-specific actor hierarchy we have two elements:
+the poker server, which is responsible for coordinating the creation of
+sessions and the web server which accepts websocket connections and connects
+them with the poker server.
+
+The full hierarchy should look something like this:
+
+```
+compoker
+└─ user
+   ├─ poker-server
+   │  ├─ session 23482384
+   │  │  ├─ participant 1
+   │  │  ├─ participant 2
+   │  │  └─ ...
+   │  └─ session 93483432
+   │     └─ ...
+   └─ web-server
+      ├─ connection 1
+      ├─ connection 2
+      └─ ...
+```
+
+## Actor: The Poker Server
+
+```rust
 
 struct PokerServer {}
 
@@ -85,12 +92,14 @@ impl Actor for PokerServer {
             sender: Sender) {
     }
 }
+```
 
-//@ ## Actor: Web server
-//@
-//@ Let's start by implementing an actor for the web server, based on the
-//@ aforementioned warp library.
+## Actor: Web server
 
+Let's start by implementing an actor for the web server, based on the
+aforementioned warp library.
+
+```rust
 struct WebServer {
     listen_on: std::net::SocketAddr,
     poker_server: ActorRef<()>
@@ -117,11 +126,13 @@ impl Actor for WebServer {
         
     }
 }
+```
 
-//@ But in order to actually serve web requests, it needs to be initialized. With
-//@ riker, the whole actor lifecycle happens through the framework, which enables
-//@ it to restart failing actors automatically.
+But in order to actually serve web requests, it needs to be initialized. With
+riker, the whole actor lifecycle happens through the framework, which enables
+it to restart failing actors automatically.
 
+```rust
 impl ActorFactoryArgs<(std::net::SocketAddr, ActorRef<()>)> for WebServer {
     fn create_args((listen_addr, poker_server): (std::net::SocketAddr, ActorRef<()>)) -> Self {
         WebServer {
@@ -130,13 +141,15 @@ impl ActorFactoryArgs<(std::net::SocketAddr, ActorRef<()>)> for WebServer {
         }
     }
 }
+```
 
 
-//@ ## Accepting websockets
-//@
-//@ Whenever a client connects to a websocket, we'll have to accept that
-//@ connection:
+## Accepting websockets
 
+Whenever a client connects to a websocket, we'll have to accept that
+connection:
+
+```rust
 
 struct Client {
     sink: futures::stream::SplitSink<warp::ws::WebSocket, warp::ws::Message>,
@@ -189,14 +202,16 @@ async fn accept_client_connection(ws: warp::ws::WebSocket) {
     
     
 }
+```
 
-//@ ## Starting the webserver
-//@
-//@ Before trying to start the web server, we'll need to determine on what port
-//@ and interface to start it. Let's use the environment variables `PORT` and
-//@ `LISTEN_ON` for that. `127.0.0.1:8080` seems like a sensible default.
-//@ If you're on Docker, you'll want to set `LISTEN_ON` to `0.0.0.0`.
+## Starting the webserver
 
+Before trying to start the web server, we'll need to determine on what port
+and interface to start it. Let's use the environment variables `PORT` and
+`LISTEN_ON` for that. `127.0.0.1:8080` seems like a sensible default.
+If you're on Docker, you'll want to set `LISTEN_ON` to `0.0.0.0`.
+
+```rust
 const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_INTERFACE: &str = "127.0.0.1";
 
@@ -233,10 +248,12 @@ fn listen_interface() -> String {
 fn listen_addr() -> Result<std::net::SocketAddr, std::net::AddrParseError> {
     format!("{}:{}", listen_interface(), listen_port()).parse()
 }
+```
 
-//@ As warp uses [Tokio](https://tokio.rs/) for its concurrent functionality,
-//@ we'll annotate  our `main` function accordingly:
+As warp uses [Tokio](https://tokio.rs/) for its concurrent functionality,
+we'll annotate  our `main` function accordingly:
 
+```rust
 #[tokio::main]
 async fn main() {
     init_logging().expect("Failed to initialize logging");
@@ -264,3 +281,4 @@ async fn main() {
         std::thread::park();
     }
 }
+```

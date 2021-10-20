@@ -3,13 +3,32 @@ name = "compoker"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Hook in the tango preprocessor for literate programming
+build = "tango-build.rs"
 
 [dependencies]
-actix-web = "3.3.2"
-actix-files = "0.5.0"
-actix-web-actors = "3.0.0"
-actix = "0.10.0"
 rand = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+futures = "0.3.17"
+warp = "0.3.*"
+riker = "0.4.*"
+log = "0.4.*"
+fern = "0.6.*"
+chrono = "0.4.*"
+tokio = { version = "1", features = ["full"] }
+
+
+# The preprocessor is the `tango` crate, so we need to add that
+# to the build-dependencies.
+
+[build-dependencies]
+tango = "0.8.2"
+
+# As cargo expects a `src/main.rs` which isn't there in the initial checkout,
+# let's explicity tell it to build a binary executable so it can cope with
+# dynamically-generated source files via tango.
+
+[[bin]]
+name = "compoker"
+path = "src/main.rs"

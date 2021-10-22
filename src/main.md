@@ -83,6 +83,12 @@ compoker
 
 struct PokerServer {}
 
+impl Default for PokerServer {
+    fn default() -> Self {
+        PokerServer{}
+    }
+}
+
 impl Actor for PokerServer {
     type Msg = ();
 
@@ -107,38 +113,20 @@ struct WebServer {
 
 use serde::{Serialize, Deserialize};
 
-impl Actor for WebServer {
-    type Msg = ();
-
-    fn pre_start(&mut self, ctx: &Context<Self::Msg>) {
-        let ws_route = warp::path("ws").and(warp::ws()).and_then(handle_websocket)
-            .with(warp::cors().allow_origin("http://localhost"));
-        let static_route = warp::path::param().and(warp::fs::dir("public"));
-        let routes = ws_route.or(static_route);
-        let future = warp::serve(routes).run(self.listen_on);
-        ctx.run(future);
+impl WebServer {
+    fn create(listen_on: std::net::SocketAddr, poker_server: ActorRef<()>) -> Self {
+        WebServer {
+            listen_on,
+            poker_server
+        }
     }
     
-    fn recv(&mut self,
-    ctx: &Context<Self::Msg>,
-    msg: Self::Msg,
-    sender: Sender) {
-        
-    }
-}
-```
-
-But in order to actually serve web requests, it needs to be initialized. With
-riker, the whole actor lifecycle happens through the framework, which enables
-it to restart failing actors automatically.
-
-```rust
-impl ActorFactoryArgs<(std::net::SocketAddr, ActorRef<()>)> for WebServer {
-    fn create_args((listen_addr, poker_server): (std::net::SocketAddr, ActorRef<()>)) -> Self {
-        WebServer {
-            listen_on: listen_addr,
-            poker_server,
-        }
+    async fn start(&mut self) {
+        let ws_route = warp::path("ws").and(warp::ws()).and_then(handle_websocket)
+            .with(warp::cors().allow_origin("http://localhost"));
+        let static_route = warp::path::end().and(warp::fs::dir("public"));
+        let routes = ws_route.or(static_route);
+        warp::serve(routes).run(self.listen_on).await
     }
 }
 ```
@@ -151,56 +139,12 @@ connection:
 
 ```rust
 
-struct Client {
-    sink: futures::stream::SplitSink<warp::ws::WebSocket, warp::ws::Message>,
-    stream: futures::Stream<Item = warp::ws::Message>
-}
-
-async fn process_messages(message: &mut futures::Stream<Item = warp::ws::Message>) {
-
-}
-
-impl Actor for Client {
-    type Msg = ();
-    
-    // an error here will not fall under supervision and terminate the actor
-    fn pre_start(&mut self, ctx: &Context<Self::Msg>) {
-       futures::executor::block_on(self.sink.send(Message::ping())).expect("Failed to ping client");
-    }
-    
-    // errors here will restart the actor using supervision
-    fn post_start(&mut self, ctx: &Context<Self::Msg>) {
-        ctx.run(process_messages(self.stream));
-    }
-
-    fn recv(&mut self,
-            ctx: &Context<Self::Msg>,
-            msg: Self::Msg,
-            sender: Sender) {
-
-    }
-}
-
-impl ActorFactoryArgs<warp::ws::WebSocket> for Client {
-    fn create_args(websocket: warp::ws::WebSocket) -> Self {
-        let (sender, receiver) = websocket.split();
-        
-        Client {
-            sink: sender,
-            stream: receiver,
-        }
-    }
-}
-
 pub async fn handle_websocket(ws: warp::ws::Ws) -> Result<impl warp::Reply, std::convert::Infallible> {
     Ok(ws.on_upgrade(move |socket| accept_client_connection(socket)))
 }
 
 async fn accept_client_connection(ws: warp::ws::WebSocket) {
     println!("Established client connection!");
-    let (mut sender, mut receiver) = ws.split();
-    
-    
 }
 ```
 
@@ -266,19 +210,7 @@ async fn main() {
     
     let poker_server = sys.actor_of::<PokerServer>("poker-server").expect("Failed to start poker server");
     
-    let web_server = sys.actor_of::<WebServer>("webserver", (listen_on, poker_server));
-    match web_server {
-        Ok(actor_ref) => {
-            println!("Web server started at {}", actor_ref);
-        },
-        Err(err) => {
-            println!("Failed to start web server! {}", err);
-        }
-    }
-    
-    // just park this thread while Riker and Tokio are doing their thing...
-    loop {
-        std::thread::park();
-    }
+    let mut web_server = WebServer::create(listen_on, poker_server);
+    web_server.start().await;
 }
 ```

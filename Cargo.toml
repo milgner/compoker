@@ -1,7 +1,7 @@
 [package]
 name = "compoker"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 # Hook in the tango preprocessor for literate programming
 build = "tango-build.rs"

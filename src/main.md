@@ -79,8 +79,8 @@ compoker
 
 ## Actor: The Poker Server
 
-```rust
 
+```rust
 struct PokerServer {}
 
 impl Default for PokerServer {
@@ -120,7 +120,7 @@ impl WebServer {
             poker_server
         }
     }
-    
+
     async fn start(&mut self) {
         let ws_route = warp::path("ws").and(warp::ws()).and_then(handle_websocket)
             .with(warp::cors().allow_origin("http://localhost"));
@@ -137,8 +137,8 @@ impl WebServer {
 Whenever a client connects to a websocket, we'll have to accept that
 connection:
 
-```rust
 
+```rust
 pub async fn handle_websocket(ws: warp::ws::Ws) -> Result<impl warp::Reply, std::convert::Infallible> {
     Ok(ws.on_upgrade(move |socket| accept_client_connection(socket)))
 }
@@ -207,9 +207,9 @@ async fn main() {
         .name("compoker")
         .create()
         .unwrap();
-    
+
     let poker_server = sys.actor_of::<PokerServer>("poker-server").expect("Failed to start poker server");
-    
+
     let mut web_server = WebServer::create(listen_on, poker_server);
     web_server.start().await;
 }

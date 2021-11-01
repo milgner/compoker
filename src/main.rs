@@ -48,27 +48,27 @@ fn init_logging() -> Result<(), fern::InitError> {
 
 //@ ## The actor hierarchy
 //@
-//@ At the top of our application-specific actor hierarchy we have two elements:
-//@ the poker server, which is responsible for coordinating the creation of
-//@ sessions and the web server which accepts websocket connections and connects
-//@ them with the poker server.
+//@ At the top of our application-specific actor hierarchy we have the poker
+//@ server, which is responsible for coordinating the creation of sessions.
+//@ Below the sessions are the actors for every participant.
 //@
-//@ The full hierarchy should look something like this:
+//@ Since the individual actors must be free to move between threads and
+//@ support re-instantiation through the system, the web server and the
+//@ websocket connections will have to live outside of the actor hierarchy.
+//@
+//@ For now. I plan to revisit this part once I have further familiarized myself
+//@ with the intricacies of the language. (I'm sure there's a way 😉)
 //@
 //@ ```
 //@ compoker
 //@ └─ user
-//@    ├─ poker-server
-//@    │  ├─ session 23482384
-//@    │  │  ├─ participant 1
-//@    │  │  ├─ participant 2
-//@    │  │  └─ ...
-//@    │  └─ session 93483432
-//@    │     └─ ...
-//@    └─ web-server
-//@       ├─ connection 1
-//@       ├─ connection 2
-//@       └─ ...
+//@    └─ poker-server
+//@       ├─ session 23482384
+//@       │  ├─ participant 1
+//@       │  ├─ participant 2
+//@       │  └─ ...
+//@       └─ session 93483432
+//@          └─ ...
 //@ ```
 //@
 //@ ## Actor: The Poker Server
@@ -83,7 +83,7 @@ impl Default for PokerServer {
 }
 
 impl Actor for PokerServer {
-    type Msg = ();
+    type Msg = serde_json::Value;
 
     fn recv(&mut self,
             ctx: &Context<Self::Msg>,
@@ -92,28 +92,79 @@ impl Actor for PokerServer {
     }
 }
 
-//@ ## Actor: Web server
+//@ ## The web server
 //@
-//@ Let's start by implementing an actor for the web server, based on the
-//@ aforementioned warp library.
+//@
+//@ ### Accepting websockets
+//@
+//@ Whenever a client connects to a websocket, we'll have to accept that
+//@ connection and wire it up with the poker server so that they can send messages
+//@ back and forth. When the connection is established, it will have to talk to
+//@ the poker server itself. Afterwards it will have to talk to the session and
+//@ finally to the actor that represents the participant in that session.
+//@
+//@ For this scenario to work, we'll just have to keep an `ActorRef` that can
+//@ receive the JSON messages our clients send. Every message we send can be
+//@ replied to with a new `ActorRef` which will then replace the destination of
+//@ the next message. 
+
+struct ClientConnection {
+    websocket: warp::ws::WebSocket,
+    actor: ActorRef<serde_json::Value>,
+}
+
+impl ClientConnection {
+    fn start(ws: warp::ws::WebSocket, poker_server: ActorRef<serde_json::Value>) {
+        let mut instance = ClientConnection {
+            websocket: ws,
+            actor: poker_server,
+        };
+        instance.run();
+    }
+    
+    fn run(&mut self) {
+        println!("Established client connection!");
+    }
+}
+
+//@ The function which accepts the client connection must be able to instantiate
+//@ the `ClientConnection` struct for which it needs the `ActorRef`. But the warp
+//@ code won't pass it in. A higher-order function (a.k.a. currying) helps us
+//@ here:
+
+pub fn curry_websocket_handler<F, I, U>(poker_server: ActorRef<serde_json::Value>) -> F 
+where
+    F: FnOnce(warp::ws::Ws) -> I + Send + 'static,
+    I: FnOnce(warp::ws::WebSocket) -> U + Send + 'static,
+    U: std::future::Future<Output = ()> + Send + 'static
+{
+    return move |ws: warp::ws::Ws| {
+        Ok(async {
+            ws.on_upgrade(move |websocket: warp::ws::WebSocket| {
+                ClientConnection::start(websocket, poker_server.clone());
+            })
+        }) 
+    }
+}
 
 struct WebServer {
     listen_on: std::net::SocketAddr,
-    poker_server: ActorRef<()>
+    poker_server: ActorRef<serde_json::Value>
 }
 
 use serde::{Serialize, Deserialize};
 
 impl WebServer {
-    fn create(listen_on: std::net::SocketAddr, poker_server: ActorRef<()>) -> Self {
+    fn create(listen_on: std::net::SocketAddr, poker_server: ActorRef<serde_json::Value>) -> Self {
         WebServer {
             listen_on,
             poker_server
         }
     }
-    
+
     async fn start(&mut self) {
-        let ws_route = warp::path("ws").and(warp::ws()).and_then(handle_websocket)
+        let websocket_handler = curry_websocket_handler(self.poker_server.clone());
+        let ws_route = warp::path("ws").and(warp::ws()).and_then(websocket_handler)
             .with(warp::cors().allow_origin("http://localhost"));
         let static_route = warp::path::end().and(warp::fs::dir("public"));
         let routes = ws_route.or(static_route);
@@ -121,20 +172,6 @@ impl WebServer {
     }
 }
 
-
-//@ ## Accepting websockets
-//@
-//@ Whenever a client connects to a websocket, we'll have to accept that
-//@ connection:
-
-
-pub async fn handle_websocket(ws: warp::ws::Ws) -> Result<impl warp::Reply, std::convert::Infallible> {
-    Ok(ws.on_upgrade(move |socket| accept_client_connection(socket)))
-}
-
-async fn accept_client_connection(ws: warp::ws::WebSocket) {
-    println!("Established client connection!");
-}
 
 //@ ## Starting the webserver
 //@
@@ -192,9 +229,8 @@ async fn main() {
         .name("compoker")
         .create()
         .unwrap();
-    
+
     let poker_server = sys.actor_of::<PokerServer>("poker-server").expect("Failed to start poker server");
-    
     let mut web_server = WebServer::create(listen_on, poker_server);
     web_server.start().await;
 }

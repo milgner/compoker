@@ -1,18 +1,25 @@
 import {Writable, writable} from "svelte/store";
-import { md5 } from "hash-wasm";
 
-const socket = new WebSocket(process.env.SERVER_URL);
+let socket = new WebSocket(process.env.SERVER_URL);
 
-// Connection opened
-socket.addEventListener("open", function (event) {
-    console.log("It's open");
-});
+async function rejoinSession() {
+    if (currentSession.id) {
+        waitForOpenSocket().then(() => {
+            joinSession(currentSession.id, currentSession.my_name)
+        })
+    }
+}
 
 async function waitForOpenSocket() {
     return new Promise<void>((resolve, reject) => {
         if (socket.readyState !== socket.OPEN) {
             socket.addEventListener("open", (_) => {
                 resolve();
+            })
+            socket.addEventListener("close", (_) => {
+                // JS doesn't support reconnecting, need to create a new websocket
+                socket = new WebSocket(process.env.SERVER_URL);
+                rejoinSession();
             })
             setTimeout(() => {
                 if (socket.readyState !== socket.OPEN) {

@@ -5,11 +5,22 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[build]
+rustflags = ["--cfg", "tokio_unstable"] # required for tracing & tokio-console
+
 [dependencies]
-actix-web = "3.3.2"
-actix-files = "0.5.0"
-actix-web-actors = "3.0.0"
-actix = "0.10.0"
+axum = { features = ["ws", "headers"], version = "0.4" }
+env_logger = "0.9"
+bastion = "0.4"
+console-subscriber = "0.1"
 rand = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+mime = "0.3"
+tokio = { features = ["full", "tracing"], version = "1" }
+tower = { features = ["full"], version = "0.4" }
+tower-http = { version = "0.2", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["std", "fmt", "env-filter", "json"] }
+tracing-tree = "0.2"
+

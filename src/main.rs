@@ -1,208 +1,50 @@
+use std::error::Error;
+use std::net::SocketAddr;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 
-use actix::prelude::*;
-use actix_files::{Files, NamedFile};
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web};
-use actix_web::dev::{ServiceRequest, ServiceResponse};
-use actix_web_actors::ws;
+use axum::{
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        TypedHeader,
+    },
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get},
+    Router,
+};
+use axum::body::{Body, BoxBody};
+use axum::http::{Request, Uri};
+use axum::response::Response;
+use tower::ServiceExt;
+use tower_http::{
+    services::ServeDir,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
+use tower_http::compression::CompressionLayer;
 
-use crate::poker_server::*;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_tree::HierarchicalLayer;
 
-mod poker_server;
+// use crate::poker_server::*;
+// mod poker_server;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// How long before lack of client response causes a timeout
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-struct ClientConnection {
-    hb: std::time::Instant,
-    server: Addr<Server>,
-    participant_id: u32,
-    session_id: u32, // ensure that the client will only ever be in one session - keinen Quatsch machen!
-}
-
-impl ClientConnection {
-    pub fn new(server: Addr<Server>) -> ClientConnection {
-        ClientConnection {
-            hb: Instant::now(),
-            participant_id: 0,
-            session_id: 0,
-            server,
-        }
-    }
-}
-
-impl Actor for ClientConnection {
-    type Context = ws::WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        self.start_heartbeat(ctx);
-        let addr = ctx.address();
-        self.server
-            .send(Connect {
-                addr: addr.recipient(),
-            })
-            .into_actor(self)
-            .then(|res, act, ctx| {
-                match res {
-                    Ok(res) => act.participant_id = res,
-                    _ => ctx.stop(),
-                }
-                fut::ready(())
-            })
-            .wait(ctx);
-    }
-
-    fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        if self.participant_id > 0 {
-            self.server.do_send(Disconnect {
-                participant_id: self.participant_id,
-                session_id: self.session_id,
-            });
-        } else {
-            println!("Something is fishy: stopping before participant_id was set");
-        }
-        Running::Stop
-    }
-}
-
-impl ClientConnection {
-    /// helper method that sends ping to client every second.
-    ///
-    /// also this method checks heartbeats from client
-    fn start_heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
-        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
-            // check client heartbeats
-            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
-                // heartbeat timed out
-                println!("Websocket Client heartbeat failed, disconnecting!");
-
-                // stop actor
-                // TODO: check whether this triggers the stopping() method and sends Disconnect
-                ctx.stop();
-
-                // don't try to send a ping
-                return;
-            }
-
-            ctx.ping(b"");
-        });
-    }
-
-    // invoked when a message from the browser has been received
-    fn process_message(&self, message: PokerMessage) {
-        let message = match message {
-            PokerMessage::CreateSessionRequest {
-                participant_name, ..
-            } => PokerMessage::CreateSessionRequest {
-                participant_id: self.participant_id,
-                participant_name,
-            },
-            PokerMessage::JoinSessionRequest {
-                session_id,
-                participant_name,
-                ..
-            } => PokerMessage::JoinSessionRequest {
-                participant_id: self.participant_id,
-                session_id,
-                participant_name,
-            },
-            PokerMessage::TopicChangeRequest { trello_card, .. } => {
-                PokerMessage::TopicChangeRequest {
-                    trello_card,
-                    participant_id: self.participant_id,
-                    session_id: self.session_id,
-                }
-            }
-            PokerMessage::VoteRequest { vote, issue_id, .. } => PokerMessage::VoteRequest {
-                vote,
-                issue_id,
-                participant_id: self.participant_id,
-                session_id: self.session_id,
-            },
-            PokerMessage::VoteRevelationRequest { issue_id, .. } => {
-                PokerMessage::VoteRevelationRequest {
-                    issue_id,
-                    participant_id: self.participant_id,
-                }
-            }
-            _ => message,
-        };
-        self.server.do_send(message);
-    }
-}
-
-// invoked when the server sends back a message -> forward it through the socket
-impl Handler<PokerMessage> for ClientConnection {
-    type Result = ();
-
-    fn handle(&mut self, msg: PokerMessage, ctx: &mut Self::Context) {
-        match msg {
-            // if the server sends back a session id, jot it down so we can use it for Disconnect
-            PokerMessage::SessionInfoResponse { session_id, .. } => {
-                self.session_id = session_id;
-            }
-            _ => (),
-        }
-        let serialized = serde_json::to_string(&msg).unwrap_or("Shit!".to_string());
-        ctx.text(serialized);
-    }
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ClientConnection {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Ping(msg)) => {
-                self.hb = Instant::now();
-                ctx.pong(&msg);
-            }
-            Ok(ws::Message::Pong(_)) => {
-                self.hb = Instant::now();
-            }
-            Ok(ws::Message::Text(text)) => {
-                let deserialized = serde_json::from_str(&text);
-                match deserialized {
-                    Ok(message) => self.process_message(message),
-                    Err(e) => {
-                        println!("failed to deserialize: {}, {}", text, e);
-                    }
-                }
-            }
-            Ok(ws::Message::Binary(_bin)) => {
-                println!("Unexpected binary message received. What's going on?!")
-            }
-            Ok(ws::Message::Close(reason)) => {
-                ctx.close(reason);
-                ctx.stop();
-            }
-            _ => ctx.stop(),
-        }
-    }
-}
-
-async fn websocket(
-    req: HttpRequest,
-    stream: web::Payload,
-    srv: web::Data<Addr<Server>>,
-) -> Result<HttpResponse, Error> {
-    let connection = ClientConnection::new(srv.get_ref().clone());
-    ws::start(connection, &req, stream)
-}
-
 const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_INTERFACE: &str = "127.0.0.1";
 
 fn listen_port() -> u16 {
     match std::env::var("PORT") {
-        Ok(port) => {
-            match u16::from_str(port.as_str()) {
-                Ok(port) => port,
-                Err(_) => {
-                    println!("Failed to parse port {}", port);
-                    DEFAULT_PORT
-                }
+        Ok(port) => match u16::from_str(port.as_str()) {
+            Ok(port) => port,
+            Err(_) => {
+                println!("Failed to parse port {}", port);
+                DEFAULT_PORT
             }
         },
         Err(_) => {
@@ -216,38 +58,125 @@ fn listen_interface() -> String {
     match std::env::var("LISTEN_INTERFACE") {
         Ok(interface) => interface,
         Err(_) => {
-            println!("No $LISTEN_INTERFACE set, falling back to {}", DEFAULT_INTERFACE);
+            println!(
+                "No $LISTEN_INTERFACE set, falling back to {}",
+                DEFAULT_INTERFACE
+            );
             DEFAULT_INTERFACE.to_string()
         }
     }
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let poker_server = Server::new().start();
-    let listen_on = format!("{}:{}", listen_interface(), listen_port());
-    let http_server = HttpServer::new(move || {
-        App::new()
-            .data(poker_server.clone())
-            .route("/ws", web::get().to(websocket))
-            .service(
-                Files::new("/", "./public")
-                    .prefer_utf8(true)
-                    .index_file("index.html")
-                    // for SPA behaviour: unknown/dynamic paths will be resolved through app routing mechanism
-                    .default_handler(|req: ServiceRequest| {
-                        let (http_req, _payload) = req.into_parts();
+fn listen_addr() -> Result<SocketAddr, std::net::AddrParseError> {
+    format!("{}:{}", listen_interface(), listen_port()).parse()
+}
 
-                        async {
-                            let response =
-                                NamedFile::open("./public/index.html")?.into_response(&http_req)?;
-                            Ok(ServiceResponse::new(http_req, response))
-                        }
-                    }),
-            )
-    })
-        .bind(listen_on.clone())?
-        .run();
-    println!("Server now running at {}", listen_on);
-    http_server.await
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    user_agent: Option<TypedHeader<axum::headers::UserAgent>>,
+) -> impl IntoResponse {
+    if let Some(TypedHeader(user_agent)) = user_agent {
+        println!("`{}` connected", user_agent.as_str());
+    }
+
+    ws.on_upgrade(handle_socket)
+}
+
+async fn handle_socket(mut socket: WebSocket) {
+    if let Some(msg) = socket.recv().await {
+        if let Ok(msg) = msg {
+            match msg {
+                Message::Text(t) => {
+                    println!("client send str: {:?}", t);
+                }
+                Message::Binary(_) => {
+                    println!("client send binary data");
+                }
+                Message::Ping(_) => {
+                    println!("socket ping");
+                }
+                Message::Pong(_) => {
+                    println!("socket pong");
+                }
+                Message::Close(_) => {
+                    println!("client disconnected");
+                    return;
+                }
+            }
+        } else {
+            println!("client disconnected");
+            return;
+        }
+    }
+
+    loop {
+        if socket
+            .send(Message::Text(String::from("Hi!")))
+            .await
+            .is_err()
+        {
+            println!("client disconnected");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
+}
+
+
+async fn get_static_file(uri: Uri) -> Result<Response<BoxBody>, (StatusCode, String)> {
+    let dummy_request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    match ServeDir::new("./public").oneshot(dummy_request).await {
+        Ok(response) => Ok(response.map(axum::body::boxed)),
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Ouch! {}", err)))
+    }
+}
+
+async fn serve_static_files(uri: Uri) -> Result<Response<BoxBody>, (StatusCode, String)> {
+    let res = get_static_file(uri.clone()).await?;
+
+    if res.status() == StatusCode::NOT_FOUND {
+        get_static_file(Uri::from_static("/")).await
+    } else {
+        Ok(res)
+    }
+}
+
+async fn run_server() -> Result<(), Box<dyn Error>> {
+    // build our application with some routes
+    let app = Router::new()
+        .fallback(get(serve_static_files))
+        // routes are matched from bottom to top, so we have to put `nest` at the
+        // top since it matches all routes
+        .route("/ws", get(ws_handler))
+        .layer(CompressionLayer::new())
+        // logging so we can see whats going on
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        );
+
+    // run it with hyper
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    tracing::debug!("listening on {}", addr);
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    Registry::default()
+        .with(tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(LevelFilter::INFO.into()).with_env_var("POKER_LOG").from_env()?)
+        .with(
+            HierarchicalLayer::new(2)
+                .with_targets(true)
+                .with_bracketed_fields(true),
+        )
+        .with(console_subscriber::spawn())
+        .with(tracing_subscriber::fmt::layer().json()).init();
+
+    run_server().await
 }

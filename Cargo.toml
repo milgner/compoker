@@ -3,20 +3,19 @@ name = "compoker"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[build]
-rustflags = ["--cfg", "tokio_unstable"] # required for tracing & tokio-console
-
 [dependencies]
 axum = { features = ["ws", "headers"], version = "0.4" }
 env_logger = "0.9"
 bastion = "0.4"
 console-subscriber = "0.1"
+http = "0.2"
+lazy_static = "1.4"
+parking_lot = "0.12"
 rand = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 mime = "0.3"
+simple-error = "0.2"
 tokio = { features = ["full", "tracing"], version = "1" }
 tower = { features = ["full"], version = "0.4" }
 tower-http = { version = "0.2", features = ["full"] }

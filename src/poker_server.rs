@@ -10,12 +10,6 @@ use rand::{self, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use simple_error::SimpleError;
 
-lazy_static! {
-    static ref POKER_SUPERVISOR: SupervisorRef =
-        Bastion::supervisor(|sp| { sp.with_strategy(SupervisionStrategy::OneForOne) })
-            .expect("Couldn't create the poker supervisor");
-}
-
 // helper function to generate a random id string
 fn generate_random_id() -> u32 {
     thread_rng().gen::<u32>()
@@ -569,14 +563,20 @@ impl Clone for VotingSession {
 //     }
 // }
 
-pub fn run() -> Result<ChildrenRef, simple_error::SimpleError> {
-    POKER_SUPERVISOR
-        .children(|children| {
-            children.with_exec(move |context| async move {
+
+/// Use this distributor name if you want to send messages to the poker server
+pub const SERVER_DISTRIBUTOR_NAME: &str = "PokerServer";
+
+pub fn run() -> Result<(), simple_error::SimpleError> {
+    Bastion::children(|children| {
+            children.with_redundancy(1) // don't want more than 1 poker server
+                .with_distributor(Distributor::named(SERVER_DISTRIBUTOR_NAME))
+                .with_exec(move |context| async move {
                 loop {
                     if let Some(msg) = context.try_recv().await {}
                 }
             })
         })
-        .map_err(|_| SimpleError::new("Failed to start poker server"))
+        .map_err(|_| SimpleError::new("Failed to start poker server"))?;
+    Ok(())
 }

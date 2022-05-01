@@ -39,9 +39,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     setup_tracing()?;
     start_bastion();
 
-    let poker_server = poker_server::run()?;
+    let _poker_server = poker_server::run()?;
 
-    let _web_server = web_server::run(poker_server).await?;
+    let _web_server = web_server::run().await?;
 
     Bastion::block_until_stopped();
     Ok(())

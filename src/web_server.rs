@@ -77,28 +77,23 @@ lazy_static! {
         http::header::COOKIE,
         http::header::SET_COOKIE,
     ]);
-    static ref WEBSOCKET_SUPERVISOR: SupervisorRef =
-        Bastion::supervisor(|sp| { sp.with_strategy(SupervisionStrategy::OneForOne) })
-            .expect("Couldn't create the web supervisor.");
 }
 
 /// handle an incoming websocket request
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<axum::headers::UserAgent>>,
-    poker_server: ChildrenRef,
+    user_agent: Option<TypedHeader<axum::headers::UserAgent>>
 ) -> impl IntoResponse {
     if let Some(TypedHeader(user_agent)) = user_agent {
         tracing::info!("`{}` connected", user_agent.as_str());
     }
 
-    ws.on_upgrade(move |socket| handle_socket(socket, poker_server))
+    ws.on_upgrade(handle_socket)
 }
 
 /// receives messages from the websocket and lets the poker server know about them
 fn process_websocket_message(
-    msg: Result<Message, axum::Error>,
-    poker_server: &ChildrenRef,
+    msg: Result<Message, axum::Error>
 ) -> Result<(), ()> {
     if let Ok(msg) = msg {
         match msg {
@@ -137,19 +132,18 @@ fn process_actor_message(msg: SignedMessage, socket: &WebSocket) -> Result<(), (
 }
 
 /// starts an actor which talks to the given websocket and allows it to communicate with the poker server
-async fn handle_socket(socket: WebSocket, poker_server: ChildrenRef) {
-    WEBSOCKET_SUPERVISOR
-        .children(move |children| {
+async fn handle_socket(socket: WebSocket) {
+    Bastion::children(move |children| {
             let socket = Arc::new(Mutex::new(socket));
-            children.with_exec(move |context| {
+            children.with_redundancy(1)
+                    .with_exec(move |context| {
                 let socket = Arc::clone(&socket);
-                let poker_server = poker_server.clone();
 
                 async move {
                     let mut locked = socket.lock().await;
                     loop {
                         tokio::select! {
-                            Some(msg) = locked.recv() => process_websocket_message(msg, &poker_server)?,
+                            Some(msg) = locked.recv() => process_websocket_message(msg)?,
                             msg = context.recv() => process_actor_message(msg?, &locked)?,
                         }
                     }
@@ -179,12 +173,11 @@ async fn serve_static_files(uri: Uri) -> Result<Response<BoxBody>, (StatusCode, 
     }
 }
 
-pub async fn run(poker_server: ChildrenRef) -> Result<ChildrenRef, Box<dyn Error>> {
+pub async fn run() -> Result<(), Box<dyn Error>> {
     let addr = listen_addr()?;
 
     Bastion::children(|children| {
         children.with_exec(move |ctx| {
-            let poker_server = poker_server.clone();
             let addr = addr.clone();
             async move {
                 // build our application with some routes
@@ -192,13 +185,7 @@ pub async fn run(poker_server: ChildrenRef) -> Result<ChildrenRef, Box<dyn Error
                     .fallback(get(serve_static_files))
                     // routes are matched from bottom to top, so we have to put `nest` at the
                     // top since it matches all routes
-                    .route(
-                        "/ws",
-                        get({
-                            let poker_server = poker_server.clone();
-                            move |upgrade, ua| ws_handler(upgrade, ua, poker_server)
-                        }),
-                    )
+                    .route("/ws", get(ws_handler))
                     .layer(CompressionLayer::new())
                     // logging so we can see whats going on (excluding sensitive headers)
                     .layer(SetSensitiveRequestHeadersLayer::from_shared(Arc::clone(
@@ -213,13 +200,16 @@ pub async fn run(poker_server: ChildrenRef) -> Result<ChildrenRef, Box<dyn Error
                     )));
 
                 // run it with hyper
+
+                let app = app.into_make_service();
                 tracing::info!("listening on {}", addr);
-                axum::Server::bind(&addr)
-                    .serve(app.into_make_service())
+                let server = axum::Server::bind(&addr);
+                server.serve(app)
                     .await
                     .map_err(|_| ())
             }
         })
     })
-    .map_err(|_| SimpleError::new("Failed to create actor for web service").into())
+    .map_err(|_| Box::new(SimpleError::new("Failed to create actor for web service")))?;
+    Ok(())
 }

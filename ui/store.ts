@@ -1,4 +1,5 @@
 import {Writable, writable} from "svelte/store";
+import fireConfetti from "./confetti";
 
 let socket = new WebSocket(process.env.SERVER_URL);
 
@@ -212,6 +213,32 @@ async function lookupUserInfoFromGitlab(username: string): Promise<UserInfo | un
     }
 }
 
+function consensusReached(votes: Vote[]) {
+    let lastVote: Vote = null;
+    for (var vote of votes) {
+        // TODO: once observer mode is available, "unknown" votes can count again
+        if (vote == Vote.Unknown) {
+            continue
+        }
+        if (lastVote == null) {
+            lastVote = vote
+        } else {
+            if (lastVote != vote) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+function fireConfettiIfConsensusReached(votes: Vote[]) {
+    if (!consensusReached(votes)) {
+        return
+    }
+
+    fireConfetti()
+}
+
 const USER_INFO_STRATEGIES: UserInfoStrategy[] = [
     lookupUserInfoFromGithub,
     lookupUserInfoFromGitlab,
@@ -358,6 +385,7 @@ const messageHandlers = {
             current.outcome = outcome
             return currentIssue = current
         })
+        fireConfettiIfConsensusReached(Object.values(votes))
     }
 }
 

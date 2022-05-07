@@ -1,14 +1,14 @@
 [package]
 name = "compoker"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 axum = { features = ["ws", "headers"], version = "0.4" }
 env_logger = "0.9"
-bastion = "0.4"
+bastion = { version = "0.4", features = ["tokio-runtime"] }
 console-subscriber = "0.1"
-futures = "0.3"
+futures = "0.3 "
 http = "0.2"
 lazy_static = "1.4"
 parking_lot = "0.12"
